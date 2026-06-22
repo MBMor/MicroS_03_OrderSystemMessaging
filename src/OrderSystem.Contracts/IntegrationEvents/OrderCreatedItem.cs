@@ -1,9 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace OrderSystem.Contracts.IntegrationEvents;
 
-namespace OrderSystem.Contracts.IntegrationEvents;
-
-internal class OrderCreatedItem
+public sealed record OrderCreatedItem
 {
+    public required Guid ProductId { get; init; }
+
+    public required string ProductName { get; init; }
+
+    public required int Quantity { get; init; }
 }

@@ -1,9 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace OrderSystem.Contracts.IntegrationEvents;
 
-namespace OrderSystem.Contracts.IntegrationEvents;
-
-internal class StockReservationFailedItem
+public sealed record StockReservationFailedItem
 {
+    public required Guid ProductId { get; init; }
+
+    public required int RequestedQuantity { get; init; }
+
+    public required int AvailableQuantity { get; init; }
 }

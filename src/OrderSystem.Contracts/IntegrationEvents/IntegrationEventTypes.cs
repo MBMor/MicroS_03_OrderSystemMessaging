@@ -1,9 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace OrderSystem.Contracts.IntegrationEvents;
 
-namespace OrderSystem.Contracts.IntegrationEvents;
-
-internal class IntegrationEventTypes
+public static class IntegrationEventTypes
 {
+    public const string OrderCreated = "OrderCreated";
+
+    public const string StockReserved = "StockReserved";
+
+    public const string StockReservationFailed = "StockReservationFailed";
 }

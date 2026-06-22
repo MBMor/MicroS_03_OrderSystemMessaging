@@ -1,9 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace OrderSystem.Contracts.IntegrationEvents;
 
-namespace OrderSystem.Contracts.IntegrationEvents;
-
-internal class StockReserved
+public sealed record StockReserved : IIntegrationEvent
 {
+    public required Guid EventId { get; init; }
+
+    public string EventType => IntegrationEventTypes.StockReserved;
+
+    public required DateTime OccurredAtUtc { get; init; }
+
+    public required Guid CorrelationId { get; init; }
+
+    public required Guid OrderId { get; init; }
+
+    public required string CustomerName { get; init; }
+
+    public required string CustomerEmail { get; init; }
+
+    public required IReadOnlyCollection<StockReservedItem> Items { get; init; }
 }

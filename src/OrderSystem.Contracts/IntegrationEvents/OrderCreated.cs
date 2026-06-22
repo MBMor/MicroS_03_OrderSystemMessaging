@@ -1,9 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace OrderSystem.Contracts.IntegrationEvents;
 
-namespace OrderSystem.Contracts.IntegrationEvents;
-
-internal class OrderCreated
+public sealed record OrderCreated : IIntegrationEvent
 {
+    public required Guid EventId { get; init; }
+
+    public string EventType => IntegrationEventTypes.OrderCreated;
+
+    public required DateTime OccurredAtUtc { get; init; }
+
+    public required Guid CorrelationId { get; init; }
+
+    public required Guid OrderId { get; init; }
+
+    public required string CustomerName { get; init; }
+
+    public required string CustomerEmail { get; init; }
+
+    public required IReadOnlyCollection<OrderCreatedItem> Items { get; init; }
 }

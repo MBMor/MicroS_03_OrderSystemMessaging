@@ -15,4 +15,8 @@
     <ProjectReference Include="..\OrdersService.Infrastructure\OrdersService.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Controllers\" />
+  </ItemGroup>
+
 </Project>

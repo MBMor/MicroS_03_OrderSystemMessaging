@@ -1,9 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace OrderSystem.Contracts.IntegrationEvents;
 
-namespace OrderSystem.Contracts.IntegrationEvents;
-
-internal class StockReservedItem
+public sealed record StockReservedItem
 {
+    public required Guid ProductId { get; init; }
+
+    public required int Quantity { get; init; }
 }

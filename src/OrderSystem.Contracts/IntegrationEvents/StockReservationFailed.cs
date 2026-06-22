@@ -1,9 +1,22 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿namespace OrderSystem.Contracts.IntegrationEvents;
 
-namespace OrderSystem.Contracts.IntegrationEvents;
-
-internal class StockReservationFailed
+public sealed record StockReservationFailed : IIntegrationEvent
 {
+    public required Guid EventId { get; init; }
+
+    public string EventType => IntegrationEventTypes.StockReservationFailed;
+
+    public required DateTime OccurredAtUtc { get; init; }
+
+    public required Guid CorrelationId { get; init; }
+
+    public required Guid OrderId { get; init; }
+
+    public required string CustomerName { get; init; }
+
+    public required string CustomerEmail { get; init; }
+
+    public required string Reason { get; init; }
+
+    public required IReadOnlyCollection<StockReservationFailedItem> Items { get; init; }
 }
