@@ -1,0 +1,23 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OrderSystem.Contracts/OrderSystem.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/InventoryService/">
+    <Project Path="src/InventoryService/InventoryService.Api/InventoryService.Api.csproj" />
+    <Project Path="src/InventoryService/InventoryService.Application/InventoryService.Application.csproj" />
+    <Project Path="src/InventoryService/InventoryService.Domain/InventoryService.Domain.csproj" />
+    <Project Path="src/InventoryService/InventoryService.Infrastructure/InventoryService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/NotificationsService/">
+    <Project Path="src/NotificationsService/NotificationsService.Api/NotificationsService.Api.csproj" />
+    <Project Path="src/NotificationsService/NotificationsService.Application/NotificationsService.Application.csproj" />
+    <Project Path="src/NotificationsService/NotificationsService.Domain/NotificationsService.Domain.csproj" />
+    <Project Path="src/NotificationsService/NotificationsService.Infrastructure/NotificationsService.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/OrdersService/">
+    <Project Path="src/OrdersService/OrdersService.Api/OrdersService.Api.csproj" />
+    <Project Path="src/OrdersService/OrdersService.Application/OrdersService.Application.csproj" />
+    <Project Path="src/OrdersService/OrdersService.Domain/OrdersService.Domain.csproj" />
+    <Project Path="src/OrdersService/OrdersService.Infrastructure/OrdersService.Infrastructure.csproj" />
+  </Folder>
+</Solution>

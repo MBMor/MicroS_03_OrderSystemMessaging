@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\OrdersService.Application\OrdersService.Application.csproj" />
+    <ProjectReference Include="..\OrdersService.Domain\OrdersService.Domain.csproj" />
+    <ProjectReference Include="..\..\OrderSystem.Contracts\OrderSystem.Contracts.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

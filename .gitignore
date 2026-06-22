@@ -1,0 +1,47 @@
+# Build output
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.rsuser
+.vs/
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+
+# Test results
+TestResults/
+coverage/
+*.coverage
+*.trx
+
+# OS files
+.DS_Store
+Thumbs.db
+# Coverage reports
+coveragereport/
+coverage/
+coverage-results/
+*.cobertura.xml
+# MSBuild binary logs
+*.binlog
+
+# Security scan outputs
+*.sarif
+
+# SBOM outputs
+sbom/
+*.spdx.json
+*.cyclonedx.json
+
+# Temporary scratch files
+misc.txt
