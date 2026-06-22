@@ -1,0 +1,141 @@
+services:
+  orders-api:
+    build:
+      context: .
+      dockerfile: src/OrdersService/OrdersService.Api/Dockerfile
+    container_name: orders-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=orders-db;Port=5432;Database=ordersdb;Username=postgres;Password=postgres
+      RabbitMQ__HostName: rabbitmq
+      RabbitMQ__Port: 5672
+      RabbitMQ__UserName: guest
+      RabbitMQ__Password: guest
+      RabbitMQ__ExchangeName: ordersystem.events
+    ports:
+      - "5081:8080"
+    depends_on:
+      orders-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  inventory-api:
+    build:
+      context: .
+      dockerfile: src/InventoryService/InventoryService.Api/Dockerfile
+    container_name: inventory-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=inventory-db;Port=5432;Database=inventorydb;Username=postgres;Password=postgres
+      RabbitMQ__HostName: rabbitmq
+      RabbitMQ__Port: 5672
+      RabbitMQ__UserName: guest
+      RabbitMQ__Password: guest
+      RabbitMQ__ExchangeName: ordersystem.events
+    ports:
+      - "5082:8080"
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  notifications-api:
+    build:
+      context: .
+      dockerfile: src/NotificationsService/NotificationsService.Api/Dockerfile
+    container_name: notifications-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: Host=notifications-db;Port=5432;Database=notificationsdb;Username=postgres;Password=postgres
+      RabbitMQ__HostName: rabbitmq
+      RabbitMQ__Port: 5672
+      RabbitMQ__UserName: guest
+      RabbitMQ__Password: guest
+      RabbitMQ__ExchangeName: ordersystem.events
+    ports:
+      - "5083:8080"
+    depends_on:
+      notifications-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  orders-db:
+    image: postgres:18
+    container_name: orders-db
+    environment:
+      POSTGRES_DB: ordersdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - orders-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ordersdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  inventory-db:
+    image: postgres:18
+    container_name: inventory-db
+    environment:
+      POSTGRES_DB: inventorydb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - inventory-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d inventorydb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  notifications-db:
+    image: postgres:18
+    container_name: notifications-db
+    environment:
+      POSTGRES_DB: notificationsdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"
+    volumes:
+      - notifications-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d notificationsdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  orders-postgres-data:
+  inventory-postgres-data:
+  notifications-postgres-data:
+  rabbitmq-data:
