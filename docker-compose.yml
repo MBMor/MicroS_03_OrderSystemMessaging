@@ -7,6 +7,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      App__ServiceName: Orders Service
       ConnectionStrings__DefaultConnection: Host=orders-db;Port=5432;Database=ordersdb;Username=postgres;Password=postgres
       RabbitMQ__HostName: rabbitmq
       RabbitMQ__Port: 5672
@@ -29,6 +30,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      App__ServiceName: Inventory Service
       ConnectionStrings__DefaultConnection: Host=inventory-db;Port=5432;Database=inventorydb;Username=postgres;Password=postgres
       RabbitMQ__HostName: rabbitmq
       RabbitMQ__Port: 5672
@@ -51,6 +53,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
+      App__ServiceName: Notifications Service
       ConnectionStrings__DefaultConnection: Host=notifications-db;Port=5432;Database=notificationsdb;Username=postgres;Password=postgres
       RabbitMQ__HostName: rabbitmq
       RabbitMQ__Port: 5672
