@@ -1,4 +1,6 @@
 ﻿using InventoryService.Application.Common.Abstractions;
+using InventoryService.Application.InventoryItems.Abstractions;
+using InventoryService.Infrastructure.InventoryItems;
 using InventoryService.Infrastructure.Persistence;
 using InventoryService.Infrastructure.Time;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +28,8 @@ public static class DependencyInjection
         });
 
         services.AddSingleton<IClock, SystemClock>();
+
+        services.AddScoped<IInventoryItemsService, InventoryItemsApplicationService>();
 
         return services;
     }
