@@ -1,6 +1,5 @@
-﻿using System.Text.Json;
-using FluentValidation;
-using OrderSystem.Contracts.IntegrationEvents;
+﻿using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 using OrdersService.Application.Common.Abstractions;
 using OrdersService.Application.Common.Pagination;
 using OrdersService.Application.Orders.Abstractions;
@@ -9,13 +8,16 @@ using OrdersService.Domain.Orders;
 using OrdersService.Infrastructure.Messaging;
 using OrdersService.Infrastructure.Outbox;
 using OrdersService.Infrastructure.Persistence;
+using OrderSystem.Contracts.IntegrationEvents;
+using System.Text.Json;
 
 namespace OrdersService.Infrastructure.Orders;
 
 public sealed class OrdersApplicationService(
     OrdersDbContext dbContext,
     IClock clock,
-    IValidator<CreateOrderRequest> createOrderRequestValidator) : IOrdersService
+    IValidator<CreateOrderRequest> createOrderRequestValidator,
+    IValidator<ListOrdersRequest> listOrdersRequestValidator) : IOrdersService
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new()
     {
@@ -26,6 +28,7 @@ public sealed class OrdersApplicationService(
     private readonly OrdersDbContext _dbContext = dbContext;
     private readonly IClock _clock = clock;
     private readonly IValidator<CreateOrderRequest> _createOrderRequestValidator = createOrderRequestValidator;
+    private readonly IValidator<ListOrdersRequest> _listOrdersRequestValidator = listOrdersRequestValidator;
 
     public async Task<OrderResponse> CreateAsync(
         CreateOrderRequest request,
@@ -87,18 +90,77 @@ public sealed class OrdersApplicationService(
         return MapToResponse(order);
     }
 
-    public Task<OrderResponse?> GetByIdAsync(
+    public async Task<OrderResponse?> GetByIdAsync(
         Guid id,
         CancellationToken cancellationToken)
     {
-        throw new NotImplementedException("Get order by ID will be implemented in step 24.");
+        if (id == Guid.Empty)
+        {
+            return null;
+        }
+
+        var order = await _dbContext.Orders
+            .AsNoTracking()
+            .Include(order => order.Items)
+            .FirstOrDefaultAsync(
+                order => order.Id == id,
+                cancellationToken);
+
+        return order is null
+            ? null
+            : MapToResponse(order);
     }
 
-    public Task<PagedResult<OrderResponse>> ListAsync(
+    public async Task<PagedResult<OrderResponse>> ListAsync(
         ListOrdersRequest request,
         CancellationToken cancellationToken)
     {
-        throw new NotImplementedException("List orders will be implemented in step 25.");
+        ArgumentNullException.ThrowIfNull(request);
+
+        var validationResult = await _listOrdersRequestValidator.ValidateAsync(
+            request,
+            cancellationToken);
+
+        if (!validationResult.IsValid)
+        {
+            throw new ValidationException(validationResult.Errors);
+        }
+
+        var query = _dbContext.Orders
+            .AsNoTracking()
+            .Include(order => order.Items)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var status = Enum.Parse<OrderStatus>(
+                request.Status,
+                ignoreCase: true);
+
+            query = query.Where(order => order.Status == status);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        query = ApplySorting(
+            query,
+            request.SortBy!,
+            request.SortDirection!);
+
+        var orders = await query
+            .Skip((request.Page - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToListAsync(cancellationToken);
+
+        var items = orders
+            .Select(MapToResponse)
+            .ToList();
+
+        return new PagedResult<OrderResponse>(
+            items,
+            request.Page,
+            request.PageSize,
+            totalCount);
     }
 
     private static OrderCreated CreateOrderCreatedEvent(Order order, DateTime occurredAtUtc)
@@ -122,6 +184,39 @@ public sealed class OrdersApplicationService(
         };
     }
 
+    private static IQueryable<Order> ApplySorting(
+    IQueryable<Order> query,
+    string sortBy,
+    string sortDirection)
+    {
+        var descending = string.Equals(
+            sortDirection,
+            "desc",
+            StringComparison.OrdinalIgnoreCase);
+
+        return sortBy.ToLowerInvariant() switch
+        {
+            "createdatutc" => descending
+                ? query.OrderByDescending(order => order.CreatedAtUtc)
+                : query.OrderBy(order => order.CreatedAtUtc),
+
+            "updatedatutc" => descending
+                ? query.OrderByDescending(order => order.UpdatedAtUtc)
+                : query.OrderBy(order => order.UpdatedAtUtc),
+
+            "customername" => descending
+                ? query.OrderByDescending(order => order.CustomerName)
+                : query.OrderBy(order => order.CustomerName),
+
+            "status" => descending
+                ? query.OrderByDescending(order => order.Status)
+                : query.OrderBy(order => order.Status),
+
+            _ => descending
+                ? query.OrderByDescending(order => order.CreatedAtUtc)
+                : query.OrderBy(order => order.CreatedAtUtc)
+        };
+    }
     private static OrderResponse MapToResponse(Order order)
     {
         return new OrderResponse
