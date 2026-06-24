@@ -1,6 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.4" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.4" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\OrdersService.Application\OrdersService.Application.csproj" />
     <ProjectReference Include="..\OrdersService.Domain\OrdersService.Domain.csproj" />
     <ProjectReference Include="..\..\OrderSystem.Contracts\OrderSystem.Contracts.csproj" />
