@@ -2,6 +2,8 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OrdersService.Application.Common.Abstractions;
+using OrdersService.Application.Orders.Abstractions;
+using OrdersService.Infrastructure.Orders;
 using OrdersService.Infrastructure.Persistence;
 using OrdersService.Infrastructure.Time;
 
@@ -26,6 +28,8 @@ public static class DependencyInjection
         });
 
         services.AddSingleton<IClock, SystemClock>();
+
+        services.AddScoped<IOrdersService, OrdersApplicationService>();
 
         return services;
     }
