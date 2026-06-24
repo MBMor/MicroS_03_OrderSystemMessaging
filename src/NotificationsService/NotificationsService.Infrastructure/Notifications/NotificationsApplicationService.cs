@@ -7,14 +7,9 @@ using NotificationsService.Infrastructure.Persistence;
 
 namespace NotificationsService.Infrastructure.Notifications;
 
-public sealed class NotificationsApplicationService : INotificationsService
+public sealed class NotificationsApplicationService(NotificationsDbContext dbContext) : INotificationsService
 {
-    private readonly NotificationsDbContext _dbContext;
-
-    public NotificationsApplicationService(NotificationsDbContext dbContext)
-    {
-        _dbContext = dbContext;
-    }
+    private readonly NotificationsDbContext _dbContext = dbContext;
 
     public async Task<NotificationResponse?> GetByIdAsync(
         Guid id,
