@@ -37,7 +37,10 @@ public sealed class NotificationsController(INotificationsService notificationsS
 
         if (notification is null)
         {
-            return NotFound();
+            return Problem(
+                statusCode: StatusCodes.Status404NotFound,
+                title: "Notification was not found.",
+                detail: $"Notification with ID '{id}' was not found.");
         }
 
         return Ok(notification);

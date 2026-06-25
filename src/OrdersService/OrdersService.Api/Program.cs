@@ -1,4 +1,5 @@
 using Asp.Versioning;
+using OrdersService.Api.Common.Errors;
 using OrdersService.Application;
 using OrdersService.Infrastructure;
 
@@ -14,6 +15,9 @@ builder.Services.AddApiVersioning(options =>
     options.ApiVersionReader = new UrlSegmentApiVersionReader();
 }).AddMvc();
 
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
 builder.Services.AddOpenApi();
 
 builder.Services.AddOrdersApplication();
@@ -25,6 +29,8 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+app.UseExceptionHandler();
 
 app.UseHttpsRedirection();
 

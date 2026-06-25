@@ -1,4 +1,5 @@
 using Asp.Versioning;
+using NotificationsService.Api.Common.Errors;
 using NotificationsService.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,6 +14,9 @@ builder.Services.AddApiVersioning(options =>
     options.ApiVersionReader = new UrlSegmentApiVersionReader();
 }).AddMvc();
 
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
 builder.Services.AddOpenApi();
 
 builder.Services.AddNotificationsInfrastructure(builder.Configuration);
@@ -23,6 +27,8 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+app.UseExceptionHandler();
 
 app.UseHttpsRedirection();
 
