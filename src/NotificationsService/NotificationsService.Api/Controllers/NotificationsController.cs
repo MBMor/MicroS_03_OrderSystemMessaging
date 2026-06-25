@@ -1,5 +1,6 @@
 ﻿using Asp.Versioning;
 using Microsoft.AspNetCore.Mvc;
+using NotificationsService.Application.Common.Pagination;
 using NotificationsService.Application.Notifications.Abstractions;
 using NotificationsService.Application.Notifications.Contracts;
 
@@ -8,12 +9,15 @@ namespace NotificationsService.Api.Controllers;
 [ApiController]
 [ApiVersion(1.0)]
 [Route("api/v{version:apiVersion}/notifications")]
+[Produces("application/json")]
 public sealed class NotificationsController(INotificationsService notificationsService) : ControllerBase
 {
     private readonly INotificationsService _notificationsService = notificationsService;
 
     [HttpGet]
     [MapToApiVersion(1.0)]
+    [ProducesResponseType(typeof(PagedResult<NotificationResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyCollection<NotificationResponse>>> ListAsync(
         [FromQuery] ListNotificationsRequest request,
         CancellationToken cancellationToken)
@@ -27,6 +31,8 @@ public sealed class NotificationsController(INotificationsService notificationsS
 
     [HttpGet("{id:guid}")]
     [MapToApiVersion(1.0)]
+    [ProducesResponseType(typeof(NotificationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<NotificationResponse>> GetByIdAsync(
         Guid id,
         CancellationToken cancellationToken)
