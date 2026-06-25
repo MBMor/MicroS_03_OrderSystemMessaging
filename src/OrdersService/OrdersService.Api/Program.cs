@@ -1,10 +1,14 @@
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using OrdersService.Api.Common.Errors;
+using OrdersService.Api.Common.Health;
 using OrdersService.Api.Common.Swagger;
 using OrdersService.Application;
 using OrdersService.Infrastructure;
+using OrdersService.Infrastructure.Persistence;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -33,6 +37,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddOrdersApplication();
 builder.Services.AddOrdersInfrastructure(builder.Configuration);
 
+builder.Services
+    .AddHealthChecks()
+    .AddDbContextCheck<OrdersDbContext>(
+        name: "orders-db",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready", "db", "postgresql"]);
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -55,6 +66,18 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 
 app.UseHttpsRedirection();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = healthCheck => healthCheck.Tags.Contains("ready"),
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
 
 app.MapControllers();
 

@@ -1,9 +1,13 @@
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
 using InventoryService.Api.Common.Errors;
+using InventoryService.Api.Common.Health;
 using InventoryService.Api.Common.Swagger;
 using InventoryService.Application;
 using InventoryService.Infrastructure;
+using InventoryService.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
@@ -33,6 +37,13 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddInventoryApplication();
 builder.Services.AddInventoryInfrastructure(builder.Configuration);
 
+builder.Services
+    .AddHealthChecks()
+    .AddDbContextCheck<InventoryDbContext>(
+        name: "inventory-db",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready", "db", "postgresql"]);
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -55,6 +66,18 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 
 app.UseHttpsRedirection();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = healthCheck => healthCheck.Tags.Contains("ready"),
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
 
 app.MapControllers();
 

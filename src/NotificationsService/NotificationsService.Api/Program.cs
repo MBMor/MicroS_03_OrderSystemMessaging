@@ -1,9 +1,13 @@
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using NotificationsService.Api.Common.Errors;
+using NotificationsService.Api.Common.Health;
 using NotificationsService.Api.Common.Swagger;
 using NotificationsService.Infrastructure;
+using NotificationsService.Infrastructure.Persistence;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,6 +35,13 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddNotificationsInfrastructure(builder.Configuration);
 
+builder.Services
+    .AddHealthChecks()
+    .AddDbContextCheck<NotificationsDbContext>(
+        name: "notifications-db",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready", "db", "postgresql"]);
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -53,6 +64,18 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 
 app.UseHttpsRedirection();
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = healthCheck => healthCheck.Tags.Contains("ready"),
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
 
 app.MapControllers();
 
