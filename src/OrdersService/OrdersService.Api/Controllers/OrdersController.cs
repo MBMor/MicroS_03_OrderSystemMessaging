@@ -10,14 +10,9 @@ namespace OrdersService.Api.Controllers;
 [ApiVersion(1.0)]
 [Route("api/v{version:apiVersion}/orders")]
 [Produces("application/json")]
-public sealed class OrdersController : ControllerBase
+public sealed class OrdersController(IOrdersService ordersService) : ControllerBase
 {
-    private readonly IOrdersService _ordersService;
-
-    public OrdersController(IOrdersService ordersService)
-    {
-        _ordersService = ordersService;
-    }
+    private readonly IOrdersService _ordersService = ordersService;
 
     [HttpPost]
     [MapToApiVersion(1.0)]

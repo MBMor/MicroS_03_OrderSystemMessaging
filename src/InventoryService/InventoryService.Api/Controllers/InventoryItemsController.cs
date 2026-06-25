@@ -10,14 +10,9 @@ namespace InventoryService.Api.Controllers;
 [ApiVersion(1.0)]
 [Route("api/v{version:apiVersion}/inventory-items")]
 [Produces("application/json")]
-public sealed class InventoryItemsController : ControllerBase
+public sealed class InventoryItemsController(IInventoryItemsService inventoryItemsService) : ControllerBase
 {
-    private readonly IInventoryItemsService _inventoryItemsService;
-
-    public InventoryItemsController(IInventoryItemsService inventoryItemsService)
-    {
-        _inventoryItemsService = inventoryItemsService;
-    }
+    private readonly IInventoryItemsService _inventoryItemsService = inventoryItemsService;
 
     [HttpPost]
     [MapToApiVersion(1.0)]

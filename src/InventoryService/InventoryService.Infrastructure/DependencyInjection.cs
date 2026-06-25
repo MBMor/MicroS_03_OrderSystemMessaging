@@ -1,6 +1,7 @@
 ﻿using InventoryService.Application.Common.Abstractions;
 using InventoryService.Application.InventoryItems.Abstractions;
 using InventoryService.Infrastructure.InventoryItems;
+using InventoryService.Infrastructure.Messaging;
 using InventoryService.Infrastructure.Persistence;
 using InventoryService.Infrastructure.Time;
 using Microsoft.EntityFrameworkCore;
@@ -26,6 +27,19 @@ public static class DependencyInjection
         {
             options.UseNpgsql(connectionString);
         });
+
+        services
+            .AddOptions<RabbitMqOptions>()
+            .Bind(configuration.GetSection(RabbitMqOptions.SectionName))
+            .Validate(options => !string.IsNullOrWhiteSpace(options.HostName), "RabbitMQ HostName is required.")
+            .Validate(options => options.Port > 0, "RabbitMQ Port must be greater than 0.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.UserName), "RabbitMQ UserName is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.Password), "RabbitMQ Password is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ExchangeName), "RabbitMQ ExchangeName is required.")
+            .ValidateOnStart();
+
+        services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
+        services.AddSingleton<IRabbitMqTopologyInitializer, RabbitMqTopologyInitializer>();
 
         services.AddSingleton<IClock, SystemClock>();
 
