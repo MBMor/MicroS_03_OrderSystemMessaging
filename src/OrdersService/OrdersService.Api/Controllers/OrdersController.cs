@@ -1,0 +1,82 @@
+﻿using Asp.Versioning;
+using Microsoft.AspNetCore.Mvc;
+using OrdersService.Application.Common.Pagination;
+using OrdersService.Application.Orders.Abstractions;
+using OrdersService.Application.Orders.Contracts;
+
+namespace OrdersService.Api.Controllers;
+
+[ApiController]
+[ApiVersion(1.0)]
+[Route("api/v{version:apiVersion}/orders")]
+[Produces("application/json")]
+public sealed class OrdersController : ControllerBase
+{
+    private readonly IOrdersService _ordersService;
+
+    public OrdersController(IOrdersService ordersService)
+    {
+        _ordersService = ordersService;
+    }
+
+    [HttpPost]
+    [MapToApiVersion(1.0)]
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<OrderResponse>> CreateAsync(
+        [FromBody] CreateOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        var order = await _ordersService.CreateAsync(
+            request,
+            cancellationToken);
+
+        return CreatedAtAction(
+            nameof(GetByIdAsync),
+            new
+            {
+                version = "1",
+                id = order.Id
+            },
+            order);
+    }
+
+    [HttpGet("{id:guid}")]
+    [MapToApiVersion(1.0)]
+    [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<OrderResponse>> GetByIdAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var order = await _ordersService.GetByIdAsync(
+            id,
+            cancellationToken);
+
+        if (order is null)
+        {
+            return Problem(
+                statusCode: StatusCodes.Status404NotFound,
+                title: "Order was not found.",
+                detail: $"Order with ID '{id}' was not found.");
+        }
+
+        return Ok(order);
+    }
+
+    [HttpGet]
+    [MapToApiVersion(1.0)]
+    [ProducesResponseType(typeof(PagedResult<OrderResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PagedResult<OrderResponse>>> ListAsync(
+        [FromQuery] ListOrdersRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _ordersService.ListAsync(
+            request,
+            cancellationToken);
+
+        return Ok(result);
+    }
+}
