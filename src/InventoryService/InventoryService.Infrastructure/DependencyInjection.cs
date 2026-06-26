@@ -49,9 +49,17 @@ public static class DependencyInjection
             .Validate(options => options.InitializationRetryDelaySeconds > 0, "RabbitMQTopology InitializationRetryDelaySeconds must be greater than 0.")
             .ValidateOnStart();
 
+        services
+            .AddOptions<OrderCreatedConsumerOptions>()
+            .Bind(configuration.GetSection(OrderCreatedConsumerOptions.SectionName))
+            .Validate(options => options.PrefetchCount > 0, "OrderCreatedConsumer PrefetchCount must be greater than 0.")
+            .Validate(options => options.ConnectionRetryDelaySeconds > 0, "OrderCreatedConsumer ConnectionRetryDelaySeconds must be greater than 0.")
+            .ValidateOnStart();
+
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<IRabbitMqTopologyInitializer, RabbitMqTopologyInitializer>();
         services.AddHostedService<RabbitMqTopologyInitializerBackgroundService>();
+        services.AddHostedService<OrderCreatedConsumerBackgroundService>();
 
         services.AddSingleton<IClock, SystemClock>();
 
