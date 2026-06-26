@@ -38,8 +38,18 @@ public static class DependencyInjection
             .Validate(options => !string.IsNullOrWhiteSpace(options.ExchangeName), "RabbitMQ ExchangeName is required.")
             .ValidateOnStart();
 
+        services
+            .AddOptions<RabbitMqTopologyOptions>()
+            .Bind(configuration.GetSection(RabbitMqTopologyOptions.SectionName))
+            .Validate(options => !string.IsNullOrWhiteSpace(options.DeadLetterExchangeName), "RabbitMQTopology DeadLetterExchangeName is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.OrderCreatedQueueName), "RabbitMQTopology OrderCreatedQueueName is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.OrderCreatedDeadLetterQueueName), "RabbitMQTopology OrderCreatedDeadLetterQueueName is required.")
+            .Validate(options => options.InitializationRetryDelaySeconds > 0, "RabbitMQTopology InitializationRetryDelaySeconds must be greater than 0.")
+            .ValidateOnStart();
+
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<IRabbitMqTopologyInitializer, RabbitMqTopologyInitializer>();
+        services.AddHostedService<RabbitMqTopologyInitializerBackgroundService>();
 
         services.AddSingleton<IClock, SystemClock>();
 
