@@ -12,35 +12,25 @@ using RabbitMQ.Client.Events;
 
 namespace InventoryService.Infrastructure.Messaging;
 
-public sealed class OrderCreatedConsumerBackgroundService : BackgroundService
+public sealed class OrderCreatedConsumerBackgroundService(
+    IServiceScopeFactory serviceScopeFactory,
+    IRabbitMqConnectionFactory connectionFactory,
+    IRabbitMqTopologyInitializer topologyInitializer,
+    IOptions<RabbitMqTopologyOptions> topologyOptions,
+    IOptions<OrderCreatedConsumerOptions> consumerOptions,
+    ILogger<OrderCreatedConsumerBackgroundService> logger) : BackgroundService
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true
     };
 
-    private readonly IServiceScopeFactory _serviceScopeFactory;
-    private readonly IRabbitMqConnectionFactory _connectionFactory;
-    private readonly IRabbitMqTopologyInitializer _topologyInitializer;
-    private readonly RabbitMqTopologyOptions _topologyOptions;
-    private readonly OrderCreatedConsumerOptions _consumerOptions;
-    private readonly ILogger<OrderCreatedConsumerBackgroundService> _logger;
-
-    public OrderCreatedConsumerBackgroundService(
-        IServiceScopeFactory serviceScopeFactory,
-        IRabbitMqConnectionFactory connectionFactory,
-        IRabbitMqTopologyInitializer topologyInitializer,
-        IOptions<RabbitMqTopologyOptions> topologyOptions,
-        IOptions<OrderCreatedConsumerOptions> consumerOptions,
-        ILogger<OrderCreatedConsumerBackgroundService> logger)
-    {
-        _serviceScopeFactory = serviceScopeFactory;
-        _connectionFactory = connectionFactory;
-        _topologyInitializer = topologyInitializer;
-        _topologyOptions = topologyOptions.Value;
-        _consumerOptions = consumerOptions.Value;
-        _logger = logger;
-    }
+    private readonly IServiceScopeFactory _serviceScopeFactory = serviceScopeFactory;
+    private readonly IRabbitMqConnectionFactory _connectionFactory = connectionFactory;
+    private readonly IRabbitMqTopologyInitializer _topologyInitializer = topologyInitializer;
+    private readonly RabbitMqTopologyOptions _topologyOptions = topologyOptions.Value;
+    private readonly OrderCreatedConsumerOptions _consumerOptions = consumerOptions.Value;
+    private readonly ILogger<OrderCreatedConsumerBackgroundService> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

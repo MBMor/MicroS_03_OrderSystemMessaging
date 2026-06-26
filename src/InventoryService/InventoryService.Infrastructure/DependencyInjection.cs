@@ -3,6 +3,7 @@ using InventoryService.Application.InventoryItems.Abstractions;
 using InventoryService.Application.StockReservations.Abstractions;
 using InventoryService.Infrastructure.InventoryItems;
 using InventoryService.Infrastructure.Messaging;
+using InventoryService.Infrastructure.Outbox;
 using InventoryService.Infrastructure.Persistence;
 using InventoryService.Infrastructure.StockReservations;
 using InventoryService.Infrastructure.Time;
@@ -56,10 +57,20 @@ public static class DependencyInjection
             .Validate(options => options.ConnectionRetryDelaySeconds > 0, "OrderCreatedConsumer ConnectionRetryDelaySeconds must be greater than 0.")
             .ValidateOnStart();
 
+        services
+            .AddOptions<OutboxPublisherOptions>()
+            .Bind(configuration.GetSection(OutboxPublisherOptions.SectionName))
+            .Validate(options => options.BatchSize > 0, "OutboxPublisher BatchSize must be greater than 0.")
+            .Validate(options => options.PollingIntervalSeconds > 0, "OutboxPublisher PollingIntervalSeconds must be greater than 0.")
+            .Validate(options => options.MaxRetryCount > 0, "OutboxPublisher MaxRetryCount must be greater than 0.")
+            .ValidateOnStart();
+
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<IRabbitMqTopologyInitializer, RabbitMqTopologyInitializer>();
+
         services.AddHostedService<RabbitMqTopologyInitializerBackgroundService>();
         services.AddHostedService<OrderCreatedConsumerBackgroundService>();
+        services.AddHostedService<InventoryOutboxPublisherBackgroundService>();
 
         services.AddSingleton<IClock, SystemClock>();
 
