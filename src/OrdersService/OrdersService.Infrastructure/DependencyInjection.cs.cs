@@ -5,6 +5,7 @@ using OrdersService.Application.Common.Abstractions;
 using OrdersService.Application.Orders.Abstractions;
 using OrdersService.Infrastructure.Messaging;
 using OrdersService.Infrastructure.Orders;
+using OrdersService.Infrastructure.Outbox;
 using OrdersService.Infrastructure.Persistence;
 using OrdersService.Infrastructure.Time;
 
@@ -38,12 +39,22 @@ public static class DependencyInjection
             .Validate(options => !string.IsNullOrWhiteSpace(options.ExchangeName), "RabbitMQ ExchangeName is required.")
             .ValidateOnStart();
 
+        services
+            .AddOptions<OutboxPublisherOptions>()
+            .Bind(configuration.GetSection(OutboxPublisherOptions.SectionName))
+            .Validate(options => options.BatchSize > 0, "OutboxPublisher BatchSize must be greater than 0.")
+            .Validate(options => options.PollingIntervalSeconds > 0, "OutboxPublisher PollingIntervalSeconds must be greater than 0.")
+            .Validate(options => options.MaxRetryCount > 0, "OutboxPublisher MaxRetryCount must be greater than 0.")
+            .ValidateOnStart();
+
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<IRabbitMqTopologyInitializer, RabbitMqTopologyInitializer>();
 
         services.AddSingleton<IClock, SystemClock>();
 
         services.AddScoped<IOrdersService, OrdersApplicationService>();
+
+        services.AddHostedService<OrdersOutboxPublisherBackgroundService>();
 
         return services;
     }
