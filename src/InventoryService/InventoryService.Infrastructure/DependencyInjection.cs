@@ -1,8 +1,10 @@
 ﻿using InventoryService.Application.Common.Abstractions;
 using InventoryService.Application.InventoryItems.Abstractions;
+using InventoryService.Application.StockReservations.Abstractions;
 using InventoryService.Infrastructure.InventoryItems;
 using InventoryService.Infrastructure.Messaging;
 using InventoryService.Infrastructure.Persistence;
+using InventoryService.Infrastructure.StockReservations;
 using InventoryService.Infrastructure.Time;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -54,6 +56,7 @@ public static class DependencyInjection
         services.AddSingleton<IClock, SystemClock>();
 
         services.AddScoped<IInventoryItemsService, InventoryItemsApplicationService>();
+        services.AddScoped<IStockReservationService, StockReservationApplicationService>();
 
         return services;
     }

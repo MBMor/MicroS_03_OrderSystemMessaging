@@ -1,6 +1,8 @@
 ﻿using FluentValidation;
 using InventoryService.Application.InventoryItems.Contracts;
 using InventoryService.Application.InventoryItems.Validation;
+using InventoryService.Application.StockReservations.Contracts;
+using InventoryService.Application.StockReservations.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace InventoryService.Application;
@@ -12,6 +14,9 @@ public static class DependencyInjection
         services.AddScoped<IValidator<CreateInventoryItemRequest>, CreateInventoryItemRequestValidator>();
         services.AddScoped<IValidator<UpdateInventoryItemRequest>, UpdateInventoryItemRequestValidator>();
         services.AddScoped<IValidator<ListInventoryItemsRequest>, ListInventoryItemsRequestValidator>();
+
+        services.AddScoped<IValidator<ReserveStockForOrderItemCommand>, ReserveStockForOrderItemCommandValidator>();
+        services.AddScoped<IValidator<ReserveStockForOrderCommand>, ReserveStockForOrderCommandValidator>();
 
         return services;
     }
