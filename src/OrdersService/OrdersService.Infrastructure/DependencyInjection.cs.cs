@@ -3,10 +3,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OrdersService.Application.Common.Abstractions;
 using OrdersService.Application.Orders.Abstractions;
+using OrdersService.Application.StockReservations.Abstractions;
 using OrdersService.Infrastructure.Messaging;
 using OrdersService.Infrastructure.Orders;
 using OrdersService.Infrastructure.Outbox;
 using OrdersService.Infrastructure.Persistence;
+using OrdersService.Infrastructure.StockReservations;
 using OrdersService.Infrastructure.Time;
 
 namespace OrdersService.Infrastructure;
@@ -58,15 +60,25 @@ public static class DependencyInjection
             .Validate(options => options.MaxRetryCount > 0, "OutboxPublisher MaxRetryCount must be greater than 0.")
             .ValidateOnStart();
 
+        services
+            .AddOptions<StockReservationResultConsumerOptions>()
+            .Bind(configuration.GetSection(StockReservationResultConsumerOptions.SectionName))
+            .Validate(options => options.PrefetchCount > 0, "StockReservationResultConsumers PrefetchCount must be greater than 0.")
+            .Validate(options => options.ConnectionRetryDelaySeconds > 0, "StockReservationResultConsumers ConnectionRetryDelaySeconds must be greater than 0.")
+            .ValidateOnStart();
+
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<IRabbitMqTopologyInitializer, RabbitMqTopologyInitializer>();
 
         services.AddHostedService<RabbitMqTopologyInitializerBackgroundService>();
         services.AddHostedService<OrdersOutboxPublisherBackgroundService>();
+        services.AddHostedService<StockReservedConsumerBackgroundService>();
+        services.AddHostedService<StockReservationFailedConsumerBackgroundService>();
 
         services.AddSingleton<IClock, SystemClock>();
 
         services.AddScoped<IOrdersService, OrdersApplicationService>();
+        services.AddScoped<IOrderStockReservationResultService, OrderStockReservationResultApplicationService>();
 
         return services;
     }

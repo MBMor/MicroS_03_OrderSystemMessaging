@@ -12,6 +12,8 @@ namespace OrdersService.Api.Controllers;
 [Produces("application/json")]
 public sealed class OrdersController(IOrdersService ordersService) : ControllerBase
 {
+    private const string GetOrderByIdRouteName = "Orders_GetById";
+
     private readonly IOrdersService _ordersService = ordersService;
 
     [HttpPost]
@@ -27,8 +29,8 @@ public sealed class OrdersController(IOrdersService ordersService) : ControllerB
             request,
             cancellationToken);
 
-        return CreatedAtAction(
-            nameof(GetByIdAsync),
+        return CreatedAtRoute(
+            GetOrderByIdRouteName,
             new
             {
                 version = "1",
@@ -37,7 +39,7 @@ public sealed class OrdersController(IOrdersService ordersService) : ControllerB
             order);
     }
 
-    [HttpGet("{id:guid}")]
+    [HttpGet("{id:guid}", Name = GetOrderByIdRouteName)]
     [MapToApiVersion(1.0)]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
