@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: src/OrdersService/OrdersService.Api/Dockerfile
     container_name: orders-api
+    ports:
+      - "5081:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
@@ -14,19 +16,26 @@ services:
       RabbitMQ__UserName: guest
       RabbitMQ__Password: guest
       RabbitMQ__ExchangeName: ordersystem.events
-    ports:
-      - "5081:8080"
     depends_on:
       orders-db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health/ready > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
 
   inventory-api:
     build:
       context: .
       dockerfile: src/InventoryService/InventoryService.Api/Dockerfile
     container_name: inventory-api
+    ports:
+      - "5082:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
@@ -37,19 +46,26 @@ services:
       RabbitMQ__UserName: guest
       RabbitMQ__Password: guest
       RabbitMQ__ExchangeName: ordersystem.events
-    ports:
-      - "5082:8080"
     depends_on:
       inventory-db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health/ready > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
 
   notifications-api:
     build:
       context: .
       dockerfile: src/NotificationsService/NotificationsService.Api/Dockerfile
     container_name: notifications-api
+    ports:
+      - "5083:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
@@ -60,13 +76,18 @@ services:
       RabbitMQ__UserName: guest
       RabbitMQ__Password: guest
       RabbitMQ__ExchangeName: ordersystem.events
-    ports:
-      - "5083:8080"
     depends_on:
       notifications-db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health/ready > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
 
   orders-db:
     image: postgres:18
@@ -81,9 +102,11 @@ services:
       - orders-postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ordersdb"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
 
   inventory-db:
     image: postgres:18
@@ -98,9 +121,11 @@ services:
       - inventory-postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d inventorydb"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
 
   notifications-db:
     image: postgres:18
@@ -115,17 +140,15 @@ services:
       - notifications-postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d notificationsdb"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
 
   rabbitmq:
     image: rabbitmq:4-management
     container_name: rabbitmq
-    hostname: rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -135,7 +158,9 @@ services:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
 
 volumes:
   orders-postgres-data:
