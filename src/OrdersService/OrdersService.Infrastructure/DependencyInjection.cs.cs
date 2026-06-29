@@ -40,6 +40,17 @@ public static class DependencyInjection
             .ValidateOnStart();
 
         services
+            .AddOptions<RabbitMqTopologyOptions>()
+            .Bind(configuration.GetSection(RabbitMqTopologyOptions.SectionName))
+            .Validate(options => !string.IsNullOrWhiteSpace(options.DeadLetterExchangeName), "RabbitMQTopology DeadLetterExchangeName is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.StockReservedQueueName), "RabbitMQTopology StockReservedQueueName is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.StockReservedDeadLetterQueueName), "RabbitMQTopology StockReservedDeadLetterQueueName is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.StockReservationFailedQueueName), "RabbitMQTopology StockReservationFailedQueueName is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.StockReservationFailedDeadLetterQueueName), "RabbitMQTopology StockReservationFailedDeadLetterQueueName is required.")
+            .Validate(options => options.InitializationRetryDelaySeconds > 0, "RabbitMQTopology InitializationRetryDelaySeconds must be greater than 0.")
+            .ValidateOnStart();
+
+        services
             .AddOptions<OutboxPublisherOptions>()
             .Bind(configuration.GetSection(OutboxPublisherOptions.SectionName))
             .Validate(options => options.BatchSize > 0, "OutboxPublisher BatchSize must be greater than 0.")
@@ -50,11 +61,12 @@ public static class DependencyInjection
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<IRabbitMqTopologyInitializer, RabbitMqTopologyInitializer>();
 
+        services.AddHostedService<RabbitMqTopologyInitializerBackgroundService>();
+        services.AddHostedService<OrdersOutboxPublisherBackgroundService>();
+
         services.AddSingleton<IClock, SystemClock>();
 
         services.AddScoped<IOrdersService, OrdersApplicationService>();
-
-        services.AddHostedService<OrdersOutboxPublisherBackgroundService>();
 
         return services;
     }
