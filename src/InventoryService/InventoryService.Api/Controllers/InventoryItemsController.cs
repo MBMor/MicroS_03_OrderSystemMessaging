@@ -12,6 +12,8 @@ namespace InventoryService.Api.Controllers;
 [Produces("application/json")]
 public sealed class InventoryItemsController(IInventoryItemsService inventoryItemsService) : ControllerBase
 {
+    private const string GetInventoryItemByProductIdRouteName = "InventoryItems_GetByProductId";
+
     private readonly IInventoryItemsService _inventoryItemsService = inventoryItemsService;
 
     [HttpPost]
@@ -28,8 +30,8 @@ public sealed class InventoryItemsController(IInventoryItemsService inventoryIte
             request,
             cancellationToken);
 
-        return CreatedAtAction(
-            nameof(GetByProductIdAsync),
+        return CreatedAtRoute(
+            GetInventoryItemByProductIdRouteName,
             new
             {
                 version = "1",
@@ -38,7 +40,7 @@ public sealed class InventoryItemsController(IInventoryItemsService inventoryIte
             inventoryItem);
     }
 
-    [HttpGet("{productId:guid}")]
+    [HttpGet("{productId:guid}", Name = GetInventoryItemByProductIdRouteName)]
     [MapToApiVersion(1.0)]
     [ProducesResponseType(typeof(InventoryItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
