@@ -42,7 +42,11 @@ builder.Services
     .AddDbContextCheck<OrdersDbContext>(
         name: "orders-db",
         failureStatus: HealthStatus.Unhealthy,
-        tags: ["ready", "db", "postgresql"]);
+        tags: ["ready", "db", "postgresql"])
+    .AddCheck<RabbitMqHealthCheck>(
+        name: "rabbitmq",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready", "messaging", "rabbitmq"]);
 
 var app = builder.Build();
 

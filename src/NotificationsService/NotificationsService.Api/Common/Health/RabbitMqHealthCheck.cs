@@ -1,0 +1,41 @@
+﻿using Microsoft.Extensions.Diagnostics.HealthChecks;
+using NotificationsService.Infrastructure.Messaging;
+
+namespace NotificationsService.Api.Common.Health;
+
+public sealed class RabbitMqHealthCheck : IHealthCheck
+{
+    private readonly IRabbitMqConnectionFactory _connectionFactory;
+    private readonly ILogger<RabbitMqHealthCheck> _logger;
+
+    public RabbitMqHealthCheck(
+        IRabbitMqConnectionFactory connectionFactory,
+        ILogger<RabbitMqHealthCheck> logger)
+    {
+        _connectionFactory = connectionFactory;
+        _logger = logger;
+    }
+
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+            await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+
+            return HealthCheckResult.Healthy("RabbitMQ is reachable.");
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "RabbitMQ health check failed.");
+
+            return HealthCheckResult.Unhealthy(
+                description: "RabbitMQ is not reachable.",
+                exception: exception);
+        }
+    }
+}
