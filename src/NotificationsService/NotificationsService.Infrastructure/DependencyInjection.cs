@@ -2,7 +2,9 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NotificationsService.Application.Common.Abstractions;
+using NotificationsService.Application.EventNotifications.Abstractions;
 using NotificationsService.Application.Notifications.Abstractions;
+using NotificationsService.Infrastructure.EventNotifications;
 using NotificationsService.Infrastructure.Messaging;
 using NotificationsService.Infrastructure.Notifications;
 using NotificationsService.Infrastructure.Persistence;
@@ -51,14 +53,25 @@ public static class DependencyInjection
             .Validate(options => options.InitializationRetryDelaySeconds > 0, "RabbitMQTopology InitializationRetryDelaySeconds must be greater than 0.")
             .ValidateOnStart();
 
+        services
+            .AddOptions<EventNotificationConsumerOptions>()
+            .Bind(configuration.GetSection(EventNotificationConsumerOptions.SectionName))
+            .Validate(options => options.PrefetchCount > 0, "EventNotificationConsumers PrefetchCount must be greater than 0.")
+            .Validate(options => options.ConnectionRetryDelaySeconds > 0, "EventNotificationConsumers ConnectionRetryDelaySeconds must be greater than 0.")
+            .ValidateOnStart();
+
         services.AddSingleton<IRabbitMqConnectionFactory, RabbitMqConnectionFactory>();
         services.AddSingleton<IRabbitMqTopologyInitializer, RabbitMqTopologyInitializer>();
 
         services.AddHostedService<RabbitMqTopologyInitializerBackgroundService>();
+        services.AddHostedService<OrderCreatedNotificationConsumerBackgroundService>();
+        services.AddHostedService<StockReservedNotificationConsumerBackgroundService>();
+        services.AddHostedService<StockReservationFailedNotificationConsumerBackgroundService>();
 
         services.AddSingleton<IClock, SystemClock>();
 
         services.AddScoped<INotificationsService, NotificationsApplicationService>();
+        services.AddScoped<IEventNotificationService, EventNotificationApplicationService>();
 
         return services;
     }

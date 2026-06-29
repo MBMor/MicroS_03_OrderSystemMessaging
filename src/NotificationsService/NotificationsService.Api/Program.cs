@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using NotificationsService.Api.Common.Errors;
 using NotificationsService.Api.Common.Health;
 using NotificationsService.Api.Common.Swagger;
+using NotificationsService.Application;
 using NotificationsService.Infrastructure;
 using NotificationsService.Infrastructure.Persistence;
 using Swashbuckle.AspNetCore.SwaggerGen;
@@ -20,7 +21,8 @@ builder.Services.AddApiVersioning(options =>
     options.AssumeDefaultVersionWhenUnspecified = true;
     options.ReportApiVersions = true;
     options.ApiVersionReader = new UrlSegmentApiVersionReader();
-}).AddMvc()
+})
+.AddMvc()
 .AddApiExplorer(options =>
 {
     options.GroupNameFormat = "'v'V";
@@ -33,6 +35,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddNotificationsApplication();
 builder.Services.AddNotificationsInfrastructure(builder.Configuration);
 
 builder.Services

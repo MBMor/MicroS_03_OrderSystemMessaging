@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Diagnostics;
+﻿using FluentValidation;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using NotificationsService.Domain.Common;
 
@@ -37,6 +38,10 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
     {
         var problemDetails = exception switch
         {
+            ValidationException validationException => CreateValidationProblemDetails(
+                httpContext,
+                validationException),
+
             DomainException domainException => new ProblemDetails
             {
                 Status = StatusCodes.Status400BadRequest,
@@ -79,6 +84,31 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
         };
 
         problemDetails.Extensions["traceId"] = httpContext.TraceIdentifier;
+
+        return problemDetails;
+    }
+
+    private static ProblemDetails CreateValidationProblemDetails(
+        HttpContext httpContext,
+        ValidationException validationException)
+    {
+        var errors = validationException.Errors
+            .GroupBy(error => error.PropertyName)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .Select(error => error.ErrorMessage)
+                    .ToArray());
+
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status400BadRequest,
+            Title = "Validation failed.",
+            Detail = "One or more validation errors occurred.",
+            Instance = httpContext.Request.Path
+        };
+
+        problemDetails.Extensions["errors"] = errors;
 
         return problemDetails;
     }
