@@ -1,0 +1,87 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Integration test suite to run"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - orders
+          - inventory
+          - notifications
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+  SOLUTION_FILE: OrderSystemMessaging.slnx
+  TEST_RESULTS_DIR: TestResults
+
+jobs:
+  integration-tests:
+    name: PostgreSQL integration tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Display .NET information
+        run: dotnet --info
+
+      - name: Verify Docker
+        run: docker version
+
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }}
+
+      - name: Build
+        run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ env.CONFIGURATION }} --no-restore
+
+      - name: Run Orders API PostgreSQL integration tests
+        if: ${{ inputs.service == 'all' || inputs.service == 'orders' }}
+        run: >
+          dotnet test tests/OrdersService.Api.PostgresIntegrationTests/OrdersService.Api.PostgresIntegrationTests.csproj
+          --configuration ${{ env.CONFIGURATION }}
+          --no-build
+          --logger "trx;LogFileName=orders-api-postgres-integration-tests.trx"
+          --results-directory ${{ env.TEST_RESULTS_DIR }}/orders-api-postgres
+
+      - name: Run Inventory API PostgreSQL integration tests
+        if: ${{ inputs.service == 'all' || inputs.service == 'inventory' }}
+        run: >
+          dotnet test tests/InventoryService.Api.PostgresIntegrationTests/InventoryService.Api.PostgresIntegrationTests.csproj
+          --configuration ${{ env.CONFIGURATION }}
+          --no-build
+          --logger "trx;LogFileName=inventory-api-postgres-integration-tests.trx"
+          --results-directory ${{ env.TEST_RESULTS_DIR }}/inventory-api-postgres
+
+      - name: Run Notifications API PostgreSQL integration tests
+        if: ${{ inputs.service == 'all' || inputs.service == 'notifications' }}
+        run: >
+          dotnet test tests/NotificationsService.Api.PostgresIntegrationTests/NotificationsService.Api.PostgresIntegrationTests.csproj
+          --configuration ${{ env.CONFIGURATION }}
+          --no-build
+          --logger "trx;LogFileName=notifications-api-postgres-integration-tests.trx"
+          --results-directory ${{ env.TEST_RESULTS_DIR }}/notifications-api-postgres
+
+      - name: Upload integration test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: integration-test-results
+          path: ${{ env.TEST_RESULTS_DIR }}/**/*.trx
+          if-no-files-found: ignore
