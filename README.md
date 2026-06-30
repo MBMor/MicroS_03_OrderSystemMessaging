@@ -1,41 +1,349 @@
 # MicroS 03 - Order System Messaging
 
-## Local end-to-end verification
+Training microservices project focused on asynchronous communication between services using RabbitMQ, the outbox pattern, idempotent consumers, PostgreSQL, Docker Compose, health checks, API versioning, unit tests, integration tests, and CI.
 
-This section describes how to verify the full asynchronous order flow locally.
-
-The expected flow is:
+The project demonstrates a simple order-processing flow:
 
 ```text
-POST /orders
-  -> Orders DB: Order + OrderCreated outbox message
-  -> RabbitMQ: order.created
-  -> Inventory Service: stock reservation
-  -> Inventory DB: StockReservation + StockReserved / StockReservationFailed outbox message
-  -> RabbitMQ: stock.reserved / stock.reservation.failed
-  -> Orders Service: update order status
-  -> Notifications Service: create notifications
+Orders Service
+  -> publishes OrderCreated
+  -> Inventory Service reserves stock
+  -> publishes StockReserved or StockReservationFailed
+  -> Orders Service updates order status
+  -> Notifications Service stores notifications
 ```
 
 ---
 
-### Prerequisites
+## Goals
+
+This project is designed to demonstrate:
+
+```text
+- microservice boundaries
+- database per service
+- asynchronous messaging with RabbitMQ
+- topic exchange routing
+- outbox pattern
+- idempotent consumers
+- dead-letter queues
+- API versioning
+- validation
+- ProblemDetails error responses
+- health checks
+- Docker Compose orchestration
+- PostgreSQL integration tests with Testcontainers
+- unit and application service tests
+- GitHub Actions CI with test results and coverage artifacts
+```
+
+---
+
+## Technology stack
+
+```text
+.NET 10
+ASP.NET Core Web API
+Controllers
+Entity Framework Core
+PostgreSQL
+RabbitMQ
+Docker Compose
+FluentValidation
+xUnit
+Testcontainers
+GitHub Actions
+```
+
+---
+
+## Services
+
+### Orders Service
+
+Responsible for:
+
+```text
+- creating orders
+- storing order items
+- writing OrderCreated events to the outbox
+- publishing OrderCreated to RabbitMQ
+- consuming StockReserved
+- consuming StockReservationFailed
+- updating order status
+```
+
+Local URL:
+
+```text
+http://localhost:5081
+```
+
+Swagger:
+
+```text
+http://localhost:5081/swagger
+```
+
+Health:
+
+```text
+http://localhost:5081/health/live
+http://localhost:5081/health/ready
+```
+
+---
+
+### Inventory Service
+
+Responsible for:
+
+```text
+- managing inventory items
+- consuming OrderCreated
+- reserving stock
+- storing stock reservations
+- writing StockReserved or StockReservationFailed events to the outbox
+- publishing inventory result events to RabbitMQ
+```
+
+Local URL:
+
+```text
+http://localhost:5082
+```
+
+Swagger:
+
+```text
+http://localhost:5082/swagger
+```
+
+Health:
+
+```text
+http://localhost:5082/health/live
+http://localhost:5082/health/ready
+```
+
+---
+
+### Notifications Service
+
+Responsible for:
+
+```text
+- consuming OrderCreated
+- consuming StockReserved
+- consuming StockReservationFailed
+- storing notifications
+- exposing notifications through read API endpoints
+```
+
+Local URL:
+
+```text
+http://localhost:5083
+```
+
+Swagger:
+
+```text
+http://localhost:5083/swagger
+```
+
+Health:
+
+```text
+http://localhost:5083/health/live
+http://localhost:5083/health/ready
+```
+
+---
+
+## High-level architecture
+
+```text
+src/
+  OrderSystem.Contracts/
+    Shared integration event contracts
+
+  OrdersService/
+    OrdersService.Api/
+    OrdersService.Application/
+    OrdersService.Domain/
+    OrdersService.Infrastructure/
+
+  InventoryService/
+    InventoryService.Api/
+    InventoryService.Application/
+    InventoryService.Domain/
+    InventoryService.Infrastructure/
+
+  NotificationsService/
+    NotificationsService.Api/
+    NotificationsService.Application/
+    NotificationsService.Domain/
+    NotificationsService.Infrastructure/
+
+tests/
+  OrdersService.Domain.UnitTests/
+  OrdersService.Application.UnitTests/
+  OrdersService.Api.PostgresIntegrationTests/
+
+  InventoryService.Domain.UnitTests/
+  InventoryService.Application.UnitTests/
+  InventoryService.Api.PostgresIntegrationTests/
+
+  NotificationsService.Domain.UnitTests/
+  NotificationsService.Application.UnitTests/
+  NotificationsService.Api.PostgresIntegrationTests/
+
+scripts/
+  smoke-test.ps1
+```
+
+---
+
+## Message broker
+
+RabbitMQ is used with a topic exchange.
+
+Exchange:
+
+```text
+ordersystem.events
+```
+
+Routing keys:
+
+```text
+order.created
+stock.reserved
+stock.reservation.failed
+```
+
+Main queues:
+
+```text
+inventory.order-created
+
+orders.stock-reserved
+orders.stock-reservation-failed
+
+notifications.order-created
+notifications.stock-reserved
+notifications.stock-reservation-failed
+```
+
+Dead-letter queues:
+
+```text
+inventory.order-created.dlq
+
+orders.stock-reserved.dlq
+orders.stock-reservation-failed.dlq
+
+notifications.order-created.dlq
+notifications.stock-reserved.dlq
+notifications.stock-reservation-failed.dlq
+```
+
+RabbitMQ Management UI:
+
+```text
+http://localhost:15672
+```
+
+Credentials:
+
+```text
+guest / guest
+```
+
+---
+
+## Main business flow
+
+### Successful stock reservation
+
+```text
+1. Client creates inventory item.
+2. Client creates order.
+3. Orders Service stores order with status PendingStockReservation.
+4. Orders Service writes OrderCreated to OutboxMessages.
+5. Orders outbox publisher publishes order.created to RabbitMQ.
+6. Inventory Service consumes order.created.
+7. Inventory Service reserves stock.
+8. Inventory Service stores StockReservation with status Reserved.
+9. Inventory Service writes StockReserved to OutboxMessages.
+10. Inventory outbox publisher publishes stock.reserved to RabbitMQ.
+11. Orders Service consumes stock.reserved.
+12. Orders Service updates order status to StockReserved.
+13. Notifications Service stores OrderCreated and StockReserved notifications.
+```
+
+Expected final state:
+
+```text
+Order.Status = StockReserved
+Inventory.AvailableQuantity decreases
+Inventory.ReservedQuantity increases
+Notifications contain OrderCreated and StockReserved notifications
+```
+
+---
+
+### Failed stock reservation
+
+```text
+1. Client creates order with unavailable quantity.
+2. Orders Service stores order with status PendingStockReservation.
+3. Orders Service publishes OrderCreated through the outbox.
+4. Inventory Service consumes OrderCreated.
+5. Inventory Service cannot reserve stock.
+6. Inventory Service stores StockReservation with status Failed.
+7. Inventory Service writes StockReservationFailed to the outbox.
+8. Inventory outbox publisher publishes stock.reservation.failed.
+9. Orders Service consumes stock.reservation.failed.
+10. Orders Service updates order status to StockReservationFailed.
+11. Notifications Service stores OrderCreated and StockReservationFailed notifications.
+```
+
+Expected final state:
+
+```text
+Order.Status = StockReservationFailed
+Inventory quantities remain unchanged
+Notifications contain OrderCreated and StockReservationFailed notifications
+```
+
+---
+
+## Local prerequisites
 
 Required tools:
 
 ```text
-.NET SDK
+.NET 10 SDK
 Docker Desktop
 EF Core CLI tools
+PowerShell 7+ recommended for smoke-test.ps1
 ```
 
-Check EF Core tools:
+Check .NET:
+
+```bash
+dotnet --info
+```
+
+Check EF Core CLI tools:
 
 ```bash
 dotnet ef --version
 ```
 
-If missing:
+Install EF Core CLI tools if missing:
 
 ```bash
 dotnet tool install --global dotnet-ef
@@ -43,27 +351,29 @@ dotnet tool install --global dotnet-ef
 
 ---
 
+## Local setup
+
 ### 1. Start infrastructure only
 
-For a clean local verification, you can remove existing containers and volumes:
+For a clean local verification, remove existing containers and volumes:
 
 ```bash
 docker compose down -v
 ```
 
-Then start only PostgreSQL databases and RabbitMQ:
+Start PostgreSQL databases and RabbitMQ:
 
 ```bash
 docker compose up -d orders-db inventory-db notifications-db rabbitmq
 ```
 
-Check that infrastructure is healthy:
+Check status:
 
 ```bash
 docker compose ps
 ```
 
-Expected:
+Expected infrastructure containers:
 
 ```text
 orders-db          healthy
@@ -78,15 +388,15 @@ rabbitmq           healthy
 
 The project does not run database migrations automatically at application startup.
 
-Set development environment first.
+Set environment first.
 
-#### PowerShell
+PowerShell:
 
 ```powershell
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 ```
 
-#### Bash
+Bash:
 
 ```bash
 export ASPNETCORE_ENVIRONMENT=Development
@@ -116,13 +426,13 @@ dotnet ef database update \
 docker compose up -d --build
 ```
 
-Check container status:
+Check status:
 
 ```bash
 docker compose ps
 ```
 
-Expected:
+Expected containers:
 
 ```text
 orders-api          healthy
@@ -136,7 +446,7 @@ rabbitmq            healthy
 
 ---
 
-### 4. Verify health endpoints
+## Health checks
 
 Orders:
 
@@ -162,7 +472,7 @@ Expected result:
 Healthy
 ```
 
-or a JSON response with:
+or JSON with:
 
 ```json
 {
@@ -172,9 +482,84 @@ or a JSON response with:
 
 ---
 
-## Successful stock reservation scenario
+## API endpoints
 
-Use this product ID for the verification:
+### Orders API
+
+Create order:
+
+```http
+POST /api/v1/orders
+```
+
+Get order by ID:
+
+```http
+GET /api/v1/orders/{id}
+```
+
+List orders:
+
+```http
+GET /api/v1/orders?page=1&pageSize=20
+```
+
+---
+
+### Inventory API
+
+Create inventory item:
+
+```http
+POST /api/v1/inventory-items
+```
+
+Get inventory item by product ID:
+
+```http
+GET /api/v1/inventory-items/{productId}
+```
+
+Update inventory item:
+
+```http
+PUT /api/v1/inventory-items/{productId}
+```
+
+List inventory items:
+
+```http
+GET /api/v1/inventory-items?page=1&pageSize=20
+```
+
+---
+
+### Notifications API
+
+Get notification by ID:
+
+```http
+GET /api/v1/notifications/{id}
+```
+
+List notifications:
+
+```http
+GET /api/v1/notifications?page=1&pageSize=20
+```
+
+Filter notifications:
+
+```http
+GET /api/v1/notifications?sourceEventType=OrderCreated
+GET /api/v1/notifications?status=Created
+```
+
+---
+
+## Manual verification
+
+Use this product ID for manual examples:
 
 ```text
 aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
@@ -194,7 +579,7 @@ curl -X POST "http://localhost:5082/api/v1/inventory-items" \
   }'
 ```
 
-If the item already exists, either continue with the existing item or update it:
+If the item already exists, update it:
 
 ```bash
 curl -X PUT "http://localhost:5082/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" \
@@ -220,7 +605,7 @@ reservedQuantity = 0
 
 ---
 
-### 2. Create order
+### 2. Create order with available stock
 
 ```bash
 curl -X POST "http://localhost:5081/api/v1/orders" \
@@ -252,11 +637,7 @@ After asynchronous processing completes, it should become:
 StockReserved
 ```
 
----
-
-### 3. Verify order status
-
-Replace `{orderId}` with the returned order ID:
+Verify order:
 
 ```bash
 curl "http://localhost:5081/api/v1/orders/{orderId}"
@@ -270,9 +651,7 @@ Expected final status:
 }
 ```
 
----
-
-### 4. Verify inventory quantity
+Verify inventory item:
 
 ```bash
 curl "http://localhost:5082/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -285,9 +664,7 @@ availableQuantity = 48
 reservedQuantity = 2
 ```
 
----
-
-### 5. Verify notifications
+Verify notifications:
 
 ```bash
 curl "http://localhost:5083/api/v1/notifications?page=1&pageSize=20"
@@ -309,13 +686,7 @@ Stock reserved for order {orderId}
 
 ---
 
-## Failed stock reservation scenario
-
-This scenario verifies the insufficient stock path.
-
----
-
-### 1. Create order with unavailable quantity
+### 3. Create order with insufficient stock
 
 ```bash
 curl -X POST "http://localhost:5081/api/v1/orders" \
@@ -335,9 +706,7 @@ curl -X POST "http://localhost:5081/api/v1/orders" \
 
 Copy the returned order `id`.
 
----
-
-### 2. Verify order status
+Verify order:
 
 ```bash
 curl "http://localhost:5081/api/v1/orders/{orderId}"
@@ -351,9 +720,7 @@ Expected final status:
 }
 ```
 
----
-
-### 3. Verify notifications
+Verify notifications:
 
 ```bash
 curl "http://localhost:5083/api/v1/notifications?page=1&pageSize=20"
@@ -375,11 +742,88 @@ Stock reservation failed for order {orderId}
 
 ---
 
-## Database verification
+## Local smoke test script
 
-You can also verify the flow directly in PostgreSQL.
+A PowerShell smoke test is available in:
+
+```text
+scripts/smoke-test.ps1
+```
+
+The script verifies the main asynchronous flow through public HTTP APIs:
+
+```text
+Orders API
+  -> RabbitMQ
+  -> Inventory API
+  -> RabbitMQ
+  -> Orders API
+  -> Notifications API
+```
+
+It checks both scenarios:
+
+```text
+1. Successful stock reservation
+2. Failed stock reservation because of insufficient stock
+```
+
+### Prerequisites
+
+Make sure the full Docker Compose stack is running and database migrations are already applied.
+
+Start the stack:
+
+```bash
+docker compose up -d --build
+```
+
+Check container status:
+
+```bash
+docker compose ps
+```
+
+Run the smoke test with PowerShell 7+:
+
+```powershell
+pwsh ./scripts/smoke-test.ps1
+```
+
+Run the smoke test with Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1
+```
+
+Override service URLs:
+
+```powershell
+pwsh ./scripts/smoke-test.ps1 `
+  -OrdersBaseUrl "http://localhost:5081" `
+  -InventoryBaseUrl "http://localhost:5082" `
+  -NotificationsBaseUrl "http://localhost:5083"
+```
+
+Increase timeout for slower machines:
+
+```powershell
+pwsh ./scripts/smoke-test.ps1 -TimeoutSeconds 180
+```
+
+Expected final output:
+
+```text
+Smoke test completed successfully.
+```
+
+The smoke test is a black-box HTTP verification. It does not connect directly to PostgreSQL or RabbitMQ.
 
 ---
+
+## Database verification
+
+You can inspect the data directly in PostgreSQL.
 
 ### Orders DB
 
@@ -393,13 +837,6 @@ select
 from "Orders"
 order by "CreatedAtUtc" desc;
 '
-```
-
-Expected statuses:
-
-```text
-StockReserved
-StockReservationFailed
 ```
 
 Check Orders outbox:
@@ -419,12 +856,6 @@ order by "OccurredAtUtc" desc;
 '
 ```
 
-Expected:
-
-```text
-OrderCreated -> Published
-```
-
 Check processed messages:
 
 ```bash
@@ -437,13 +868,6 @@ select
 from "ProcessedMessages"
 order by "ProcessedAtUtc" desc;
 '
-```
-
-Expected consumers:
-
-```text
-orders.stock-reserved-consumer
-orders.stock-reservation-failed-consumer
 ```
 
 ---
@@ -475,13 +899,6 @@ order by "CreatedAtUtc" desc;
 '
 ```
 
-Expected statuses:
-
-```text
-Reserved
-Failed
-```
-
 Check Inventory outbox:
 
 ```bash
@@ -499,13 +916,6 @@ order by "OccurredAtUtc" desc;
 '
 ```
 
-Expected:
-
-```text
-StockReserved -> Published
-StockReservationFailed -> Published
-```
-
 Check processed messages:
 
 ```bash
@@ -518,12 +928,6 @@ select
 from "ProcessedMessages"
 order by "ProcessedAtUtc" desc;
 '
-```
-
-Expected consumer:
-
-```text
-inventory.order-created-consumer
 ```
 
 ---
@@ -543,14 +947,6 @@ order by "CreatedAtUtc" desc;
 '
 ```
 
-Expected event types:
-
-```text
-OrderCreated
-StockReserved
-StockReservationFailed
-```
-
 Check processed messages:
 
 ```bash
@@ -563,14 +959,6 @@ select
 from "ProcessedMessages"
 order by "ProcessedAtUtc" desc;
 '
-```
-
-Expected consumers:
-
-```text
-notifications.order-created-consumer
-notifications.stock-reserved-consumer
-notifications.stock-reservation-failed-consumer
 ```
 
 ---
@@ -611,11 +999,11 @@ notifications.stock-reserved.dlq              0 messages
 notifications.stock-reservation-failed.dlq    0 messages
 ```
 
-If a DLQ contains messages, inspect the service logs.
+If a DLQ contains messages, inspect the corresponding service logs.
 
 ---
 
-## Useful logs
+## Logs
 
 Orders:
 
@@ -643,11 +1031,223 @@ docker compose logs rabbitmq --tail=200
 
 ---
 
-## Common troubleshooting
+## Tests
+
+The repository contains three main test groups:
+
+```text
+Domain unit tests
+Application unit tests
+PostgreSQL API integration tests
+```
+
+There are no automated E2E tests in the repository at this stage. End-to-end behavior is verified locally through Docker Compose and `scripts/smoke-test.ps1`.
+
+---
+
+### Domain unit tests
+
+Domain unit tests validate business rules without database, API host, or RabbitMQ.
+
+Projects:
+
+```text
+tests/OrdersService.Domain.UnitTests
+tests/InventoryService.Domain.UnitTests
+tests/NotificationsService.Domain.UnitTests
+```
+
+Run all domain unit tests:
+
+```bash
+dotnet test tests/OrdersService.Domain.UnitTests/OrdersService.Domain.UnitTests.csproj
+dotnet test tests/InventoryService.Domain.UnitTests/InventoryService.Domain.UnitTests.csproj
+dotnet test tests/NotificationsService.Domain.UnitTests/NotificationsService.Domain.UnitTests.csproj
+```
+
+---
+
+### Application unit tests
+
+Application unit tests verify application services using EF Core InMemory.
+
+Projects:
+
+```text
+tests/OrdersService.Application.UnitTests
+tests/InventoryService.Application.UnitTests
+tests/NotificationsService.Application.UnitTests
+```
+
+Run all application unit tests:
+
+```bash
+dotnet test tests/OrdersService.Application.UnitTests/OrdersService.Application.UnitTests.csproj
+dotnet test tests/InventoryService.Application.UnitTests/InventoryService.Application.UnitTests.csproj
+dotnet test tests/NotificationsService.Application.UnitTests/NotificationsService.Application.UnitTests.csproj
+```
+
+Note:
+
+```text
+EF Core InMemory is used only for fast application service tests.
+It is not a replacement for PostgreSQL integration tests.
+```
+
+---
+
+### PostgreSQL API integration tests
+
+PostgreSQL API integration tests use Testcontainers and require Docker.
+
+They verify:
+
+```text
+- controller routing
+- API versioning
+- HTTP status codes
+- request validation behavior
+- EF Core mapping
+- PostgreSQL schema and migrations
+- persistence through real PostgreSQL
+```
+
+Projects:
+
+```text
+tests/OrdersService.Api.PostgresIntegrationTests
+tests/InventoryService.Api.PostgresIntegrationTests
+tests/NotificationsService.Api.PostgresIntegrationTests
+```
+
+Run Orders API PostgreSQL integration tests:
+
+```bash
+dotnet test tests/OrdersService.Api.PostgresIntegrationTests/OrdersService.Api.PostgresIntegrationTests.csproj
+```
+
+Run Inventory API PostgreSQL integration tests:
+
+```bash
+dotnet test tests/InventoryService.Api.PostgresIntegrationTests/InventoryService.Api.PostgresIntegrationTests.csproj
+```
+
+Run Notifications API PostgreSQL integration tests:
+
+```bash
+dotnet test tests/NotificationsService.Api.PostgresIntegrationTests/NotificationsService.Api.PostgresIntegrationTests.csproj
+```
+
+Run all PostgreSQL API integration tests:
+
+```bash
+dotnet test tests/OrdersService.Api.PostgresIntegrationTests/OrdersService.Api.PostgresIntegrationTests.csproj
+dotnet test tests/InventoryService.Api.PostgresIntegrationTests/InventoryService.Api.PostgresIntegrationTests.csproj
+dotnet test tests/NotificationsService.Api.PostgresIntegrationTests/NotificationsService.Api.PostgresIntegrationTests.csproj
+```
+
+Docker Desktop must be running before executing integration tests.
+
+---
+
+### Run all tests
+
+```bash
+dotnet test OrderSystemMessaging.slnx
+```
+
+This runs all test projects included in the solution.
+
+---
+
+## Code coverage
+
+The CI workflow collects code coverage using:
+
+```text
+coverlet.collector
+XPlat Code Coverage
+Cobertura XML
+```
+
+Run tests with coverage locally:
+
+```bash
+dotnet test OrderSystemMessaging.slnx \
+  --configuration Release \
+  --collect:"XPlat Code Coverage" \
+  --logger "trx" \
+  --results-directory TestResults
+```
+
+Coverage files are generated under:
+
+```text
+TestResults/
+```
+
+The generated coverage files are usually named:
+
+```text
+coverage.cobertura.xml
+```
+
+The current CI workflow uploads coverage XML files as an artifact named:
+
+```text
+coverage-reports
+```
+
+It also uploads test result files as an artifact named:
+
+```text
+test-results
+```
+
+The current CI workflow collects and publishes coverage artifacts but does not enforce a minimum coverage threshold.
+
+---
+
+## GitHub Actions
+
+The repository contains a CI workflow:
+
+```text
+.github/workflows/ci.yml
+```
+
+The workflow runs on:
+
+```text
+push
+pull_request
+workflow_dispatch
+```
+
+It performs:
+
+```text
+dotnet restore
+dotnet build
+dotnet test with coverage
+upload test results
+upload coverage reports
+```
+
+Artifacts:
+
+```text
+test-results
+coverage-reports
+```
+
+---
+
+## Troubleshooting
 
 ### API container is unhealthy
 
-Check readiness endpoint from the host:
+Check readiness endpoints from the host:
 
 ```bash
 curl http://localhost:5081/health/ready
@@ -655,12 +1255,20 @@ curl http://localhost:5082/health/ready
 curl http://localhost:5083/health/ready
 ```
 
-Then check the same endpoint from inside the container:
+Then check the same endpoints from inside containers:
 
 ```bash
 docker exec orders-api curl --fail http://localhost:8080/health/ready
 docker exec inventory-api curl --fail http://localhost:8080/health/ready
 docker exec notifications-api curl --fail http://localhost:8080/health/ready
+```
+
+Inspect logs:
+
+```bash
+docker compose logs orders-api --tail=200
+docker compose logs inventory-api --tail=200
+docker compose logs notifications-api --tail=200
 ```
 
 ---
@@ -689,33 +1297,51 @@ dotnet ef database update \
 
 ### Inventory item already exists
 
-The sample uses a fixed product ID:
+The manual examples use a fixed product ID:
 
 ```text
 aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
 ```
 
-If you run the test repeatedly, creating the same inventory item can return conflict.
+If you run the examples repeatedly, creating the same inventory item can return conflict.
 
-Either update the item with `PUT`, or use a different `productId`.
+Use one of these options:
+
+```text
+- update the existing item with PUT
+- use a different productId
+- reset the local environment with docker compose down -v
+```
 
 ---
 
 ### Outbox messages stay Pending
 
-Check whether RabbitMQ queues and bindings exist.
+Check whether RabbitMQ is running:
 
-In RabbitMQ UI, verify:
+```bash
+docker compose ps rabbitmq
+```
+
+Open RabbitMQ Management UI:
+
+```text
+http://localhost:15672
+```
+
+Verify that these exist:
 
 ```text
 ordersystem.events exchange
 inventory.order-created queue
 orders.stock-reserved queue
 orders.stock-reservation-failed queue
-notifications.* queues
+notifications.order-created queue
+notifications.stock-reserved queue
+notifications.stock-reservation-failed queue
 ```
 
-Also inspect service logs:
+Inspect service logs:
 
 ```bash
 docker compose logs orders-api --tail=200
@@ -743,430 +1369,72 @@ Inspect the corresponding service logs and the DLQ message payload in RabbitMQ M
 
 ---
 
-## Local smoke test script
+### Testcontainers tests fail locally
 
-A simple PowerShell smoke test is available in:
+Check that Docker Desktop is running.
 
-```text
-scripts/smoke-test.ps1
+Then run one integration test project directly:
+
+```bash
+dotnet test tests/OrdersService.Api.PostgresIntegrationTests/OrdersService.Api.PostgresIntegrationTests.csproj
 ```
 
-The script verifies the main asynchronous flow through public HTTP APIs:
-
-```text
-Orders API
-  -> RabbitMQ
-  -> Inventory API
-  -> RabbitMQ
-  -> Orders API
-  -> Notifications API
-```
-
-The smoke test checks both scenarios:
-
-```text
-1. Successful stock reservation
-2. Failed stock reservation because of insufficient stock
-```
+If Docker is not available, PostgreSQL integration tests cannot run.
 
 ---
 
-### Prerequisites
+## Current limitations
 
-Make sure the full Docker Compose stack is running and database migrations are already applied.
+This project intentionally does not include:
 
-Start the stack:
+```text
+- authentication and authorization
+- API Gateway
+- distributed tracing
+- metrics dashboard
+- production secrets management
+- Kubernetes deployment
+- automated RabbitMQ E2E tests
+```
+
+Those are intended for later microservices training projects.
+
+---
+
+## Useful commands
+
+Build solution:
+
+```bash
+dotnet build OrderSystemMessaging.slnx
+```
+
+Run all tests:
+
+```bash
+dotnet test OrderSystemMessaging.slnx
+```
+
+Start local stack:
 
 ```bash
 docker compose up -d --build
 ```
 
-Check container status:
+Stop local stack:
 
 ```bash
-docker compose ps
+docker compose down
 ```
 
-Expected result:
-
-```text
-orders-api          healthy
-inventory-api       healthy
-notifications-api   healthy
-orders-db           healthy
-inventory-db        healthy
-notifications-db    healthy
-rabbitmq            healthy
-```
-
----
-
-### Apply EF Core migrations
-
-The project does not run database migrations automatically at application startup.
-
-Apply migrations manually:
+Stop local stack and remove volumes:
 
 ```bash
-dotnet ef database update \
-  --project src/OrdersService/OrdersService.Infrastructure \
-  --startup-project src/OrdersService/OrdersService.Api
-
-dotnet ef database update \
-  --project src/InventoryService/InventoryService.Infrastructure \
-  --startup-project src/InventoryService/InventoryService.Api
-
-dotnet ef database update \
-  --project src/NotificationsService/NotificationsService.Infrastructure \
-  --startup-project src/NotificationsService/NotificationsService.Api
+docker compose down -v
 ```
 
----
-
-### Run the smoke test
-
-#### PowerShell 7+
+Run smoke test:
 
 ```powershell
 pwsh ./scripts/smoke-test.ps1
 ```
-
-#### Windows PowerShell
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1
-```
-
----
-
-### Optional parameters
-
-You can override service URLs:
-
-```powershell
-pwsh ./scripts/smoke-test.ps1 `
-  -OrdersBaseUrl "http://localhost:5081" `
-  -InventoryBaseUrl "http://localhost:5082" `
-  -NotificationsBaseUrl "http://localhost:5083"
-```
-
-You can also increase the timeout for slower machines:
-
-```powershell
-pwsh ./scripts/smoke-test.ps1 -TimeoutSeconds 180
-```
-
----
-
-### Expected successful output
-
-```text
-Starting local smoke test.
-Orders API:        http://localhost:5081
-Inventory API:     http://localhost:5082
-Notifications API: http://localhost:5083
-
-==> Checking service readiness
-[OK] Orders Service readiness health check is healthy.
-[OK] Inventory Service readiness health check is healthy.
-[OK] Notifications Service readiness health check is healthy.
-
-==> Creating inventory item
-[OK] Inventory item ... was created.
-
-==> Creating order for successful stock reservation
-[OK] Successful scenario order ... was created.
-
-==> Waiting for successful order to become StockReserved
-[OK] Order ... reached status StockReserved.
-
-==> Checking inventory quantity after successful reservation
-[OK] Inventory quantities are correct after successful reservation.
-
-==> Checking notifications for successful scenario
-[OK] Notification 'was created' for order ... exists.
-[OK] Notification 'Stock reserved' for order ... exists.
-
-==> Creating order for failed stock reservation
-[OK] Failed scenario order ... was created.
-
-==> Waiting for failed order to become StockReservationFailed
-[OK] Order ... reached status StockReservationFailed.
-
-==> Checking notifications for failed scenario
-[OK] Notification 'was created' for order ... exists.
-[OK] Notification 'Stock reservation failed' for order ... exists.
-
-==> Checking inventory quantity after failed reservation
-[OK] Inventory quantities are unchanged after failed reservation.
-
-Smoke test completed successfully.
-```
-
----
-
-### What the script verifies
-
-The script verifies the system as a black-box through HTTP APIs.
-
-It checks:
-
-```text
-- all readiness health endpoints,
-- creation of an inventory item,
-- successful order flow,
-- order status transition to StockReserved,
-- inventory quantity update,
-- notification creation,
-- failed order flow,
-- order status transition to StockReservationFailed,
-- failed notification creation,
-- unchanged inventory quantity after failed reservation.
-```
-
-The script does not connect directly to PostgreSQL or RabbitMQ.
-
----
-
-### Troubleshooting
-
-#### Health check fails
-
-Check readiness endpoints manually:
-
-```bash
-curl http://localhost:5081/health/ready
-curl http://localhost:5082/health/ready
-curl http://localhost:5083/health/ready
-```
-
-Then inspect logs:
-
-```bash
-docker compose logs orders-api --tail=200
-docker compose logs inventory-api --tail=200
-docker compose logs notifications-api --tail=200
-```
-
----
-
-#### Timeout while waiting for order status
-
-Check RabbitMQ Management UI:
-
-```text
-http://localhost:15672
-```
-
-Credentials:
-
-```text
-guest / guest
-```
-
-Inspect these queues:
-
-```text
-inventory.order-created
-orders.stock-reserved
-orders.stock-reservation-failed
-notifications.order-created
-notifications.stock-reserved
-notifications.stock-reservation-failed
-```
-
-Also inspect DLQ queues:
-
-```text
-inventory.order-created.dlq
-orders.stock-reserved.dlq
-orders.stock-reservation-failed.dlq
-notifications.order-created.dlq
-notifications.stock-reserved.dlq
-notifications.stock-reservation-failed.dlq
-```
-
-If a DLQ contains messages, inspect the corresponding service logs.
-
----
-
-#### Error: relation does not exist
-
-The database exists, but EF Core migrations were not applied.
-
-Run:
-
-```bash
-dotnet ef database update \
-  --project src/OrdersService/OrdersService.Infrastructure \
-  --startup-project src/OrdersService/OrdersService.Api
-
-dotnet ef database update \
-  --project src/InventoryService/InventoryService.Infrastructure \
-  --startup-project src/InventoryService/InventoryService.Api
-
-dotnet ef database update \
-  --project src/NotificationsService/NotificationsService.Infrastructure \
-  --startup-project src/NotificationsService/NotificationsService.Api
-```
-
----
-
-#### API container is unhealthy
-
-Check the readiness endpoint from inside the container.
-
-Orders:
-
-```bash
-docker exec orders-api curl --fail http://localhost:8080/health/ready
-```
-
-Inventory:
-
-```bash
-docker exec inventory-api curl --fail http://localhost:8080/health/ready
-```
-
-Notifications:
-
-```bash
-docker exec notifications-api curl --fail http://localhost:8080/health/ready
-```
-
----
-
-### Notes
-
-This smoke test is not a replacement for integration tests.
-
-It is intended as a fast local verification that the main asynchronous flow works end-to-end:
-
-```text
-HTTP request
-  -> outbox
-  -> RabbitMQ
-  -> consumer
-  -> database update
-  -> notification
-```
-
-Integration tests with Testcontainers should be added separately.
-
----
-
-## Code coverage
-
-The CI workflow generates code coverage from unit tests using:
-
-```text
-coverlet.collector
-ReportGenerator
-Cobertura
-```
-
-The generated coverage report is uploaded in GitHub Actions as an artifact named:
-
-```text
-coverage-report
-```
-
----
-
-### Run coverage locally
-
-From the repository root, run:
-
-```bash
-dotnet test OrderSystemMessaging.slnx \
-  --configuration Release \
-  --collect:"XPlat Code Coverage" \
-  --logger "trx;LogFileName=test-results.trx" \
-  --results-directory TestResults
-```
-
-After the command finishes, coverage files should be created under:
-
-```text
-TestResults/
-```
-
-The generated coverage file is usually named:
-
-```text
-coverage.cobertura.xml
-```
-
----
-
-### Generate an HTML coverage report locally
-
-Install ReportGenerator as a global .NET tool:
-
-```bash
-dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.10
-```
-
-Then generate the HTML report:
-
-```bash
-reportgenerator \
-  -reports:"TestResults/**/coverage.cobertura.xml" \
-  -targetdir:"CoverageReport" \
-  -reporttypes:"Html;Cobertura;TextSummary"
-```
-
-Open the generated report:
-
-```text
-CoverageReport/index.html
-```
-
-A text summary is also generated here:
-
-```text
-CoverageReport/Summary.txt
-```
-
----
-
-### GitHub Actions output
-
-The CI workflow uploads two artifacts:
-
-```text
-test-results
-coverage-report
-```
-
-`test-results` contains `.trx` test result files.
-
-`coverage-report` contains the generated HTML coverage report, including:
-
-```text
-index.html
-Summary.txt
-```
-
-Download the `coverage-report` artifact from GitHub Actions and open:
-
-```text
-index.html
-```
-
----
-
-### Notes
-
-The current CI workflow collects and publishes coverage, but it does not enforce a minimum coverage threshold yet.
-
-Coverage enforcement can be added later, for example:
-
-```text
-minimum line coverage
-minimum branch coverage
-pull request coverage summary
-coverage badge
-```
-
-For now, coverage is used only as a reporting artifact.
