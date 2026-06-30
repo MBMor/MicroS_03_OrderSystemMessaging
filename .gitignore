@@ -20,8 +20,10 @@ logs/
 
 # Test results
 TestResults/
+Coverage-report/
 coverage/
 *.coverage
+*.coveragexml
 *.trx
 
 # OS files

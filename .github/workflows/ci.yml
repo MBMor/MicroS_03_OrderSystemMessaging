@@ -20,10 +20,12 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   CONFIGURATION: Release
   SOLUTION_FILE: OrderSystemMessaging.slnx
+  TEST_RESULTS_DIR: TestResults
+  COVERAGE_REPORT_DIR: CoverageReport
 
 jobs:
-  build-and-test:
-    name: Build and unit tests
+  build-test-and-coverage:
+    name: Build, unit tests and coverage
     runs-on: ubuntu-latest
 
     steps:
@@ -44,18 +46,46 @@ jobs:
       - name: Build
         run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ env.CONFIGURATION }} --no-restore
 
-      - name: Test
+      - name: Test with coverage
         run: >
           dotnet test ${{ env.SOLUTION_FILE }}
           --configuration ${{ env.CONFIGURATION }}
           --no-build
-          --logger "trx"
-          --results-directory TestResults
+          --collect:"XPlat Code Coverage"
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ${{ env.TEST_RESULTS_DIR }}
+
+      - name: Install ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.10
+
+      - name: Generate coverage report
+        run: >
+          reportgenerator
+          -reports:"${{ env.TEST_RESULTS_DIR }}/**/coverage.cobertura.xml"
+          -targetdir:"${{ env.COVERAGE_REPORT_DIR }}"
+          -reporttypes:"Html;Cobertura;TextSummary"
+          -assemblyfilters:"+OrdersService.*;+InventoryService.*;+NotificationsService.*;-*.UnitTests"
+
+      - name: Print coverage summary
+        run: |
+          if [ -f "${{ env.COVERAGE_REPORT_DIR }}/Summary.txt" ]; then
+            cat "${{ env.COVERAGE_REPORT_DIR }}/Summary.txt"
+          else
+            echo "Coverage summary was not generated."
+          fi
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: TestResults/**/*.trx
           if-no-files-found: error
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: ${{ env.COVERAGE_REPORT_DIR }}
+          if-no-files-found: ignore

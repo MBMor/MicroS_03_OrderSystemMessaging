@@ -1052,3 +1052,121 @@ HTTP request
 ```
 
 Integration tests with Testcontainers should be added separately.
+
+---
+
+## Code coverage
+
+The CI workflow generates code coverage from unit tests using:
+
+```text
+coverlet.collector
+ReportGenerator
+Cobertura
+```
+
+The generated coverage report is uploaded in GitHub Actions as an artifact named:
+
+```text
+coverage-report
+```
+
+---
+
+### Run coverage locally
+
+From the repository root, run:
+
+```bash
+dotnet test OrderSystemMessaging.slnx \
+  --configuration Release \
+  --collect:"XPlat Code Coverage" \
+  --logger "trx;LogFileName=test-results.trx" \
+  --results-directory TestResults
+```
+
+After the command finishes, coverage files should be created under:
+
+```text
+TestResults/
+```
+
+The generated coverage file is usually named:
+
+```text
+coverage.cobertura.xml
+```
+
+---
+
+### Generate an HTML coverage report locally
+
+Install ReportGenerator as a global .NET tool:
+
+```bash
+dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.10
+```
+
+Then generate the HTML report:
+
+```bash
+reportgenerator \
+  -reports:"TestResults/**/coverage.cobertura.xml" \
+  -targetdir:"CoverageReport" \
+  -reporttypes:"Html;Cobertura;TextSummary"
+```
+
+Open the generated report:
+
+```text
+CoverageReport/index.html
+```
+
+A text summary is also generated here:
+
+```text
+CoverageReport/Summary.txt
+```
+
+---
+
+### GitHub Actions output
+
+The CI workflow uploads two artifacts:
+
+```text
+test-results
+coverage-report
+```
+
+`test-results` contains `.trx` test result files.
+
+`coverage-report` contains the generated HTML coverage report, including:
+
+```text
+index.html
+Summary.txt
+```
+
+Download the `coverage-report` artifact from GitHub Actions and open:
+
+```text
+index.html
+```
+
+---
+
+### Notes
+
+The current CI workflow collects and publishes coverage, but it does not enforce a minimum coverage threshold yet.
+
+Coverage enforcement can be added later, for example:
+
+```text
+minimum line coverage
+minimum branch coverage
+pull request coverage summary
+coverage badge
+```
+
+For now, coverage is used only as a reporting artifact.
