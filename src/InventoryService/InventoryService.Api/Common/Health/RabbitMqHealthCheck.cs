@@ -3,18 +3,12 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace InventoryService.Api.Common.Health;
 
-public sealed class RabbitMqHealthCheck : IHealthCheck
+public sealed class RabbitMqHealthCheck(
+    IRabbitMqConnectionFactory connectionFactory,
+    ILogger<RabbitMqHealthCheck> logger) : IHealthCheck
 {
-    private readonly IRabbitMqConnectionFactory _connectionFactory;
-    private readonly ILogger<RabbitMqHealthCheck> _logger;
-
-    public RabbitMqHealthCheck(
-        IRabbitMqConnectionFactory connectionFactory,
-        ILogger<RabbitMqHealthCheck> logger)
-    {
-        _connectionFactory = connectionFactory;
-        _logger = logger;
-    }
+    private readonly IRabbitMqConnectionFactory _connectionFactory = connectionFactory;
+    private readonly ILogger<RabbitMqHealthCheck> _logger = logger;
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,

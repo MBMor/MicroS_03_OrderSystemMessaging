@@ -4,21 +4,14 @@ using Microsoft.Extensions.Options;
 
 namespace NotificationsService.Infrastructure.Messaging;
 
-public sealed class RabbitMqTopologyInitializerBackgroundService : BackgroundService
+public sealed class RabbitMqTopologyInitializerBackgroundService(
+    IRabbitMqTopologyInitializer topologyInitializer,
+    IOptions<RabbitMqTopologyOptions> topologyOptions,
+    ILogger<RabbitMqTopologyInitializerBackgroundService> logger) : BackgroundService
 {
-    private readonly IRabbitMqTopologyInitializer _topologyInitializer;
-    private readonly RabbitMqTopologyOptions _topologyOptions;
-    private readonly ILogger<RabbitMqTopologyInitializerBackgroundService> _logger;
-
-    public RabbitMqTopologyInitializerBackgroundService(
-        IRabbitMqTopologyInitializer topologyInitializer,
-        IOptions<RabbitMqTopologyOptions> topologyOptions,
-        ILogger<RabbitMqTopologyInitializerBackgroundService> logger)
-    {
-        _topologyInitializer = topologyInitializer;
-        _topologyOptions = topologyOptions.Value;
-        _logger = logger;
-    }
+    private readonly IRabbitMqTopologyInitializer _topologyInitializer = topologyInitializer;
+    private readonly RabbitMqTopologyOptions _topologyOptions = topologyOptions.Value;
+    private readonly ILogger<RabbitMqTopologyInitializerBackgroundService> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
