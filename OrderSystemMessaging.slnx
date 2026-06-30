@@ -25,4 +25,9 @@
     <Project Path="src/OrdersService/OrdersService.Domain/OrdersService.Domain.csproj" />
     <Project Path="src/OrdersService/OrdersService.Infrastructure/OrdersService.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/InventoryService.Domain.UnitTests/InventoryService.Domain.UnitTests.csproj" />
+    <Project Path="tests/NotificationsService.Domain.UnitTests/NotificationsService.Domain.UnitTests.csproj" />
+    <Project Path="tests/OrdersService.Domain.UnitTests/OrdersService.Domain.UnitTests.csproj" />
+  </Folder>
 </Solution>
