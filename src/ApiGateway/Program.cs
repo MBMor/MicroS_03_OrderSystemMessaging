@@ -1,3 +1,4 @@
+using ApiGateway.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -29,26 +30,49 @@ if (string.IsNullOrWhiteSpace(jwtValidIssuer))
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+.AddJwtBearer(options =>
+{
+    options.MapInboundClaims = false;
+
+    options.Authority = jwtAuthority;
+    options.Audience = jwtAudience;
+    options.RequireHttpsMetadata = requireHttpsMetadata;
+
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.Authority = jwtAuthority;
-        options.Audience = jwtAudience;
-        options.RequireHttpsMetadata = requireHttpsMetadata;
+        ValidateIssuer = true,
+        ValidIssuer = jwtValidIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtAudience,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        NameClaimType = "preferred_username",
+        RoleClaimType = "roles"
+    };
+});
 
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidIssuer = jwtValidIssuer,
-            ValidateAudience = true,
-            ValidAudience = jwtAudience,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            NameClaimType = "preferred_username",
-            RoleClaimType = "roles"
-        };
-    });
-
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(
+        AuthorizationPolicyNames.AuthenticatedUser,
+        policy => policy.RequireAuthenticatedUser())
+    .AddPolicy(
+        AuthorizationPolicyNames.CustomerOnly,
+        policy => policy.RequireRole(RoleNames.Customer))
+    .AddPolicy(
+        AuthorizationPolicyNames.SupportOrAdmin,
+        policy => policy.RequireRole(RoleNames.Support, RoleNames.Admin))
+    .AddPolicy(
+        AuthorizationPolicyNames.AdminOnly,
+        policy => policy.RequireRole(RoleNames.Admin))
+    .AddPolicy(
+        AuthorizationPolicyNames.CanCreateOrder,
+        policy => policy.RequireAuthenticatedUser())
+    .AddPolicy(
+        AuthorizationPolicyNames.CanManageInventory,
+        policy => policy.RequireRole(RoleNames.Admin))
+    .AddPolicy(
+        AuthorizationPolicyNames.CanReadNotifications,
+        policy => policy.RequireRole(RoleNames.Support, RoleNames.Admin));
 
 builder.Services
     .AddReverseProxy()
