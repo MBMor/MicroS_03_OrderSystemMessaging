@@ -10,6 +10,8 @@ using OrdersService.Application;
 using OrdersService.Infrastructure;
 using OrdersService.Infrastructure.Persistence;
 using Swashbuckle.AspNetCore.SwaggerGen;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,6 +32,51 @@ builder.Services.AddApiVersioning(options =>
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+var jwtAuthority = builder.Configuration["Jwt:Authority"];
+var jwtAudience = builder.Configuration["Jwt:Audience"];
+var jwtValidIssuer = builder.Configuration["Jwt:ValidIssuer"];
+var requireHttpsMetadata = builder.Configuration.GetValue<bool>("Jwt:RequireHttpsMetadata");
+
+if (string.IsNullOrWhiteSpace(jwtAuthority))
+{
+    throw new InvalidOperationException("JWT configuration value 'Jwt:Authority' is missing.");
+}
+
+if (string.IsNullOrWhiteSpace(jwtAudience))
+{
+    throw new InvalidOperationException("JWT configuration value 'Jwt:Audience' is missing.");
+}
+
+if (string.IsNullOrWhiteSpace(jwtValidIssuer))
+{
+    throw new InvalidOperationException("JWT configuration value 'Jwt:ValidIssuer' is missing.");
+}
+
+builder.Services
+    .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+
+        options.Authority = jwtAuthority;
+        options.Audience = jwtAudience;
+        options.RequireHttpsMetadata = requireHttpsMetadata;
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtValidIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            NameClaimType = "preferred_username",
+            RoleClaimType = "roles"
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
 builder.Services.AddSwaggerGen();
@@ -70,6 +117,10 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
+
+app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
