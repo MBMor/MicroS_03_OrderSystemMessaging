@@ -5,6 +5,7 @@
     <File Path="README.md" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/ApiGateway/ApiGateway.csproj" />
     <Project Path="src/OrderSystem.Contracts/OrderSystem.Contracts.csproj" />
   </Folder>
   <Folder Name="/src/InventoryService/">
