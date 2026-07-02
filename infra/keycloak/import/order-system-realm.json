@@ -1,0 +1,138 @@
+{
+  "realm": "order-system",
+  "enabled": true,
+  "displayName": "Order System",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "customer",
+        "description": "Customer user allowed to create and read own order-related data in local development."
+      },
+      {
+        "name": "support",
+        "description": "Support user allowed to read operational data in local development."
+      },
+      {
+        "name": "admin",
+        "description": "Administrator user allowed to manage protected operational endpoints in local development."
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "order-system-api",
+      "name": "Order System API",
+      "description": "Local development API client for the API Gateway and downstream services.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:5080/*",
+        "http://localhost:18080/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles as flat roles claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "order-system-api audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "order-system-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice.customer",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Customer",
+      "email": "alice.customer@example.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Alice123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "customer"
+      ]
+    },
+    {
+      "username": "sam.support",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Sam",
+      "lastName": "Support",
+      "email": "sam.support@example.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Sam123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "support"
+      ]
+    },
+    {
+      "username": "anna.admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Anna",
+      "lastName": "Admin",
+      "email": "anna.admin@example.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Anna123!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "admin"
+      ]
+    }
+  ]
+}
