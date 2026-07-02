@@ -10,6 +10,13 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       App__ServiceName: API Gateway
+    depends_on:
+      orders-api:
+        condition: service_healthy
+      inventory-api:
+        condition: service_healthy
+      notifications-api:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health > /dev/null || exit 1"]
       interval: 10s
