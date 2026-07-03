@@ -1,5 +1,7 @@
+using System.Threading.RateLimiting;
 using ApiGateway.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -30,26 +32,26 @@ if (string.IsNullOrWhiteSpace(jwtValidIssuer))
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-.AddJwtBearer(options =>
-{
-    options.MapInboundClaims = false;
-
-    options.Authority = jwtAuthority;
-    options.Audience = jwtAudience;
-    options.RequireHttpsMetadata = requireHttpsMetadata;
-
-    options.TokenValidationParameters = new TokenValidationParameters
+    .AddJwtBearer(options =>
     {
-        ValidateIssuer = true,
-        ValidIssuer = jwtValidIssuer,
-        ValidateAudience = true,
-        ValidAudience = jwtAudience,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-        NameClaimType = "preferred_username",
-        RoleClaimType = "roles"
-    };
-});
+        options.MapInboundClaims = false;
+
+        options.Authority = jwtAuthority;
+        options.Audience = jwtAudience;
+        options.RequireHttpsMetadata = requireHttpsMetadata;
+
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtValidIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            NameClaimType = "preferred_username",
+            RoleClaimType = "roles"
+        };
+    });
 
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(
@@ -74,6 +76,59 @@ builder.Services.AddAuthorizationBuilder()
         AuthorizationPolicyNames.CanReadNotifications,
         policy => policy.RequireRole(RoleNames.Support, RoleNames.Admin));
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy(RateLimitingPolicyNames.OrderCreationLimit, httpContext =>
+    {
+        var partitionKey = GetRateLimitPartitionKey(httpContext);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+
+    options.AddPolicy(RateLimitingPolicyNames.AuthenticatedUserLimit, httpContext =>
+    {
+        var partitionKey = GetRateLimitPartitionKey(httpContext);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+
+    options.AddPolicy(RateLimitingPolicyNames.AdminEndpointLimit, httpContext =>
+    {
+        var partitionKey = GetRateLimitPartitionKey(httpContext);
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0,
+                AutoReplenishment = true
+            });
+    });
+});
+
 builder.Services
     .AddReverseProxy()
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
@@ -86,9 +141,30 @@ app.UseAuthentication();
 
 app.UseAuthorization();
 
+app.UseRateLimiter();
+
 app.MapControllers();
 
 app.MapReverseProxy()
    .RequireAuthorization();
 
 app.Run();
+
+static string GetRateLimitPartitionKey(HttpContext httpContext)
+{
+    var username = httpContext.User.Identity?.Name;
+
+    if (!string.IsNullOrWhiteSpace(username))
+    {
+        return $"user:{username}";
+    }
+
+    var remoteIpAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+
+    if (!string.IsNullOrWhiteSpace(remoteIpAddress))
+    {
+        return $"ip:{remoteIpAddress}";
+    }
+
+    return "anonymous";
+}
