@@ -14,6 +14,10 @@ services:
       Jwt__Audience: order-system-api
       Jwt__ValidIssuer: http://localhost:18080/realms/order-system
       Jwt__RequireHttpsMetadata: "false"
+      HealthChecks__OrdersApiReadyUrl: http://orders-api:8080/health/ready
+      HealthChecks__InventoryApiReadyUrl: http://inventory-api:8080/health/ready
+      HealthChecks__NotificationsApiReadyUrl: http://notifications-api:8080/health/ready
+      HealthChecks__KeycloakRealmUrl: http://keycloak:8080/realms/order-system
     depends_on:
       orders-api:
         condition: service_healthy
@@ -24,11 +28,11 @@ services:
       keycloak:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health/ready > /dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 10s
+      start_period: 20s
     restart: unless-stopped
 
   orders-api:

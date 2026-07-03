@@ -1,15 +1,60 @@
-using System.Diagnostics;
 using System.Threading.RateLimiting;
+using ApiGateway.Health;
 using ApiGateway.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-builder.Services.AddHealthChecks();
+builder.Services.AddHttpClient("health-checks");
+
+builder.Services
+    .AddHealthChecks()
+    .AddCheck(
+        "self",
+        () => HealthCheckResult.Healthy("API Gateway is running."),
+        tags: ["live"])
+    .Add(new HealthCheckRegistration(
+        "orders-api",
+        serviceProvider => CreateUrlHealthCheck(
+            serviceProvider,
+            builder.Configuration,
+            "health-checks",
+            "HealthChecks:OrdersApiReadyUrl"),
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready"]))
+    .Add(new HealthCheckRegistration(
+        "inventory-api",
+        serviceProvider => CreateUrlHealthCheck(
+            serviceProvider,
+            builder.Configuration,
+            "health-checks",
+            "HealthChecks:InventoryApiReadyUrl"),
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready"]))
+    .Add(new HealthCheckRegistration(
+        "notifications-api",
+        serviceProvider => CreateUrlHealthCheck(
+            serviceProvider,
+            builder.Configuration,
+            "health-checks",
+            "HealthChecks:NotificationsApiReadyUrl"),
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready"]))
+    .Add(new HealthCheckRegistration(
+        "keycloak",
+        serviceProvider => CreateUrlHealthCheck(
+            serviceProvider,
+            builder.Configuration,
+            "health-checks",
+            "HealthChecks:KeycloakRealmUrl"),
+        failureStatus: HealthStatus.Unhealthy,
+        tags: ["ready"]));
 
 var jwtAuthority = builder.Configuration["Jwt:Authority"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
@@ -52,48 +97,6 @@ builder.Services
             NameClaimType = "preferred_username",
             RoleClaimType = "roles"
         };
-
-        options.Events = new JwtBearerEvents
-        {
-            OnAuthenticationFailed = context =>
-            {
-                var logger = SecurityLoggingHelpers.GetSecurityLogger(context.HttpContext);
-
-                logger.LogWarning(
-                    "JWT authentication failed. Path: {Path}. Method: {Method}. ErrorType: {ErrorType}. TraceId: {TraceId}",
-                    context.HttpContext.Request.Path.Value,
-                    context.HttpContext.Request.Method,
-                    context.Exception.GetType().Name,
-                    context.HttpContext.TraceIdentifier);
-
-                return Task.CompletedTask;
-            },
-            OnChallenge = context =>
-            {
-                var logger = SecurityLoggingHelpers.GetSecurityLogger(context.HttpContext);
-
-                logger.LogInformation(
-                    "JWT authentication challenge returned. Path: {Path}. Method: {Method}. TraceId: {TraceId}",
-                    context.HttpContext.Request.Path.Value,
-                    context.HttpContext.Request.Method,
-                    context.HttpContext.TraceIdentifier);
-
-                return Task.CompletedTask;
-            },
-            OnForbidden = context =>
-            {
-                var logger = SecurityLoggingHelpers.GetSecurityLogger(context.HttpContext);
-
-                logger.LogWarning(
-                    "JWT authorization forbidden. User: {User}. Path: {Path}. Method: {Method}. TraceId: {TraceId}",
-                    SecurityLoggingHelpers.GetUserName(context.HttpContext),
-                    context.HttpContext.Request.Path.Value,
-                    context.HttpContext.Request.Method,
-                    context.HttpContext.TraceIdentifier);
-
-                return Task.CompletedTask;
-            }
-        };
     });
 
 builder.Services.AddAuthorizationBuilder()
@@ -122,21 +125,6 @@ builder.Services.AddAuthorizationBuilder()
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-    options.OnRejected = (context, _) =>
-    {
-        var httpContext = context.HttpContext;
-        var logger = SecurityLoggingHelpers.GetSecurityLogger(httpContext);
-
-        logger.LogWarning(
-            "Rate limit rejected request. User: {User}. Path: {Path}. Method: {Method}. TraceId: {TraceId}",
-            SecurityLoggingHelpers.GetUserName(httpContext),
-            httpContext.Request.Path.Value,
-            httpContext.Request.Method,
-            httpContext.TraceIdentifier);
-
-        return ValueTask.CompletedTask;
-    };
 
     options.AddPolicy(RateLimitingPolicyNames.OrderCreationLimit, httpContext =>
     {
@@ -193,9 +181,22 @@ builder.Services
 
 var app = builder.Build();
 
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    Predicate = healthCheck => healthCheck.Tags.Contains("live")
+});
 
-app.UseSecurityRequestLogging();
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = healthCheck => healthCheck.Tags.Contains("live"),
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = healthCheck => healthCheck.Tags.Contains("ready"),
+    ResponseWriter = HealthCheckResponseWriter.WriteAsync
+});
 
 app.UseAuthentication();
 
@@ -206,7 +207,7 @@ app.UseRateLimiter();
 app.MapControllers();
 
 app.MapReverseProxy()
-    .RequireAuthorization();
+   .RequireAuthorization();
 
 app.Run();
 
@@ -229,48 +230,21 @@ static string GetRateLimitPartitionKey(HttpContext httpContext)
     return "anonymous";
 }
 
-static class SecurityLoggingHelpers
+static IHealthCheck CreateUrlHealthCheck(
+    IServiceProvider serviceProvider,
+    IConfiguration configuration,
+    string httpClientName,
+    string configurationKey)
 {
-    public static ILogger GetSecurityLogger(HttpContext httpContext)
-    {
-        var loggerFactory = httpContext.RequestServices.GetRequiredService<ILoggerFactory>();
+    var url = configuration[configurationKey];
 
-        return loggerFactory.CreateLogger("ApiGateway.Security");
+    if (string.IsNullOrWhiteSpace(url))
+    {
+        throw new InvalidOperationException(
+            $"Health check configuration value '{configurationKey}' is missing.");
     }
 
-    public static string GetUserName(HttpContext httpContext)
-    {
-        return httpContext.User.Identity?.Name ?? "anonymous";
-    }
-}
+    var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
 
-static class SecurityRequestLoggingMiddlewareExtensions
-{
-    public static IApplicationBuilder UseSecurityRequestLogging(this IApplicationBuilder app)
-    {
-        return app.Use(async (context, next) =>
-        {
-            var logger = SecurityLoggingHelpers.GetSecurityLogger(context);
-            var stopwatch = Stopwatch.StartNew();
-
-            logger.LogInformation(
-                "Gateway request started. Method: {Method}. Path: {Path}. TraceId: {TraceId}",
-                context.Request.Method,
-                context.Request.Path.Value,
-                context.TraceIdentifier);
-
-            await next(context);
-
-            stopwatch.Stop();
-
-            logger.LogInformation(
-                "Gateway request completed. Method: {Method}. Path: {Path}. StatusCode: {StatusCode}. ElapsedMs: {ElapsedMs}. User: {User}. TraceId: {TraceId}",
-                context.Request.Method,
-                context.Request.Path.Value,
-                context.Response.StatusCode,
-                stopwatch.ElapsedMilliseconds,
-                SecurityLoggingHelpers.GetUserName(context),
-                context.TraceIdentifier);
-        });
-    }
+    return new UrlHealthCheck(httpClientFactory.CreateClient(httpClientName), url);
 }
