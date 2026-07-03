@@ -8,6 +8,8 @@ using OrdersService.Api.Common;
 using OrdersService.Infrastructure.Persistence;
 using Testcontainers.PostgreSql;
 using Xunit;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.TestHost;
 
 namespace OrdersService.Api.PostgresIntegrationTests.Common;
 
@@ -37,6 +39,19 @@ public sealed class OrdersApiFactory : WebApplicationFactory<ApiAssemblyMarker>,
             {
                 options.UseNpgsql(_postgresContainer.GetConnectionString());
             });
+        });
+        builder.ConfigureTestServices(services =>
+        {
+            services
+                .AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = TestAuthenticationHandler.AuthenticationScheme;
+                    options.DefaultChallengeScheme = TestAuthenticationHandler.AuthenticationScheme;
+                    options.DefaultScheme = TestAuthenticationHandler.AuthenticationScheme;
+                })
+                .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
+                    TestAuthenticationHandler.AuthenticationScheme,
+                    _ => { });
         });
     }
 
@@ -97,6 +112,11 @@ public sealed class OrdersApiFactory : WebApplicationFactory<ApiAssemblyMarker>,
         Environment.SetEnvironmentVariable("OutboxPublisher__BatchSize", "20");
         Environment.SetEnvironmentVariable("OutboxPublisher__PollingIntervalSeconds", "60");
         Environment.SetEnvironmentVariable("OutboxPublisher__MaxRetryCount", "5");
+
+        Environment.SetEnvironmentVariable("Jwt__Authority", "http://localhost:18080/realms/order-system");
+        Environment.SetEnvironmentVariable("Jwt__Audience", "order-system-api");
+        Environment.SetEnvironmentVariable("Jwt__ValidIssuer", "http://localhost:18080/realms/order-system");
+        Environment.SetEnvironmentVariable("Jwt__RequireHttpsMetadata", "false");
     }
 
     private static void ClearEnvironmentVariables()
@@ -112,5 +132,10 @@ public sealed class OrdersApiFactory : WebApplicationFactory<ApiAssemblyMarker>,
         Environment.SetEnvironmentVariable("OutboxPublisher__BatchSize", null);
         Environment.SetEnvironmentVariable("OutboxPublisher__PollingIntervalSeconds", null);
         Environment.SetEnvironmentVariable("OutboxPublisher__MaxRetryCount", null);
+
+        Environment.SetEnvironmentVariable("Jwt__Authority", null);
+        Environment.SetEnvironmentVariable("Jwt__Audience", null);
+        Environment.SetEnvironmentVariable("Jwt__ValidIssuer", null);
+        Environment.SetEnvironmentVariable("Jwt__RequireHttpsMetadata", null);
     }
 }

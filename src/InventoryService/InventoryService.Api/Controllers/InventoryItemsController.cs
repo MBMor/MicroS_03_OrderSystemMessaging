@@ -3,6 +3,8 @@ using InventoryService.Application.Common.Pagination;
 using InventoryService.Application.InventoryItems.Abstractions;
 using InventoryService.Application.InventoryItems.Contracts;
 using Microsoft.AspNetCore.Mvc;
+using InventoryService.Api.Security;
+using Microsoft.AspNetCore.Authorization;
 
 namespace InventoryService.Api.Controllers;
 
@@ -18,6 +20,7 @@ public sealed class InventoryItemsController(IInventoryItemsService inventoryIte
 
     [HttpPost]
     [MapToApiVersion(1.0)]
+    [Authorize(Policy = AuthorizationPolicyNames.CanManageInventory)]
     [Consumes("application/json")]
     [ProducesResponseType(typeof(InventoryItemResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -42,6 +45,7 @@ public sealed class InventoryItemsController(IInventoryItemsService inventoryIte
 
     [HttpGet("{productId:guid}", Name = GetInventoryItemByProductIdRouteName)]
     [MapToApiVersion(1.0)]
+    [Authorize(Policy = AuthorizationPolicyNames.SupportOrAdmin)]
     [ProducesResponseType(typeof(InventoryItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<InventoryItemResponse>> GetByProductIdAsync(
@@ -65,6 +69,7 @@ public sealed class InventoryItemsController(IInventoryItemsService inventoryIte
 
     [HttpGet]
     [MapToApiVersion(1.0)]
+    [Authorize(Policy = AuthorizationPolicyNames.SupportOrAdmin)]
     [ProducesResponseType(typeof(PagedResult<InventoryItemResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PagedResult<InventoryItemResponse>>> ListAsync(
@@ -80,6 +85,7 @@ public sealed class InventoryItemsController(IInventoryItemsService inventoryIte
 
     [HttpPut("{productId:guid}")]
     [MapToApiVersion(1.0)]
+    [Authorize(Policy = AuthorizationPolicyNames.CanManageInventory)]
     [Consumes("application/json")]
     [ProducesResponseType(typeof(InventoryItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

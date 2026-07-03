@@ -2,12 +2,14 @@
 using InventoryService.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Testcontainers.PostgreSql;
 using Xunit;
+using Microsoft.AspNetCore.Authentication;
 
 namespace InventoryService.Api.PostgresIntegrationTests.Common;
 
@@ -38,6 +40,19 @@ public sealed class InventoryApiFactory : WebApplicationFactory<ApiAssemblyMarke
             {
                 options.UseNpgsql(_postgresContainer.GetConnectionString());
             });
+        });
+        builder.ConfigureTestServices(services =>
+        {
+            services
+                .AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = TestAuthenticationHandler.AuthenticationScheme;
+                    options.DefaultChallengeScheme = TestAuthenticationHandler.AuthenticationScheme;
+                    options.DefaultScheme = TestAuthenticationHandler.AuthenticationScheme;
+                })
+                .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
+                    TestAuthenticationHandler.AuthenticationScheme,
+                    _ => { });
         });
     }
 
@@ -107,6 +122,11 @@ public sealed class InventoryApiFactory : WebApplicationFactory<ApiAssemblyMarke
         Environment.SetEnvironmentVariable("OutboxPublisher__BatchSize", "20");
         Environment.SetEnvironmentVariable("OutboxPublisher__PollingIntervalSeconds", "60");
         Environment.SetEnvironmentVariable("OutboxPublisher__MaxRetryCount", "5");
+
+        Environment.SetEnvironmentVariable("Jwt__Authority", "http://localhost:18080/realms/order-system");
+        Environment.SetEnvironmentVariable("Jwt__Audience", "order-system-api");
+        Environment.SetEnvironmentVariable("Jwt__ValidIssuer", "http://localhost:18080/realms/order-system");
+        Environment.SetEnvironmentVariable("Jwt__RequireHttpsMetadata", "false");
     }
 
     private static void ClearEnvironmentVariables()
@@ -130,5 +150,10 @@ public sealed class InventoryApiFactory : WebApplicationFactory<ApiAssemblyMarke
         Environment.SetEnvironmentVariable("OutboxPublisher__BatchSize", null);
         Environment.SetEnvironmentVariable("OutboxPublisher__PollingIntervalSeconds", null);
         Environment.SetEnvironmentVariable("OutboxPublisher__MaxRetryCount", null);
+
+        Environment.SetEnvironmentVariable("Jwt__Authority", null);
+        Environment.SetEnvironmentVariable("Jwt__Audience", null);
+        Environment.SetEnvironmentVariable("Jwt__ValidIssuer", null);
+        Environment.SetEnvironmentVariable("Jwt__RequireHttpsMetadata", null);
     }
 }

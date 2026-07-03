@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -8,6 +9,7 @@ using NotificationsService.Api.Common;
 using NotificationsService.Infrastructure.Persistence;
 using Testcontainers.PostgreSql;
 using Xunit;
+using Microsoft.AspNetCore.Authentication;
 
 namespace NotificationsService.Api.PostgresIntegrationTests.Common;
 
@@ -37,6 +39,19 @@ public sealed class NotificationsApiFactory : WebApplicationFactory<ApiAssemblyM
             {
                 options.UseNpgsql(_postgresContainer.GetConnectionString());
             });
+        });
+        builder.ConfigureTestServices(services =>
+        {
+            services
+                .AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = TestAuthenticationHandler.AuthenticationScheme;
+                    options.DefaultChallengeScheme = TestAuthenticationHandler.AuthenticationScheme;
+                    options.DefaultScheme = TestAuthenticationHandler.AuthenticationScheme;
+                })
+                .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(
+                    TestAuthenticationHandler.AuthenticationScheme,
+                    _ => { });
         });
     }
 
@@ -103,6 +118,11 @@ public sealed class NotificationsApiFactory : WebApplicationFactory<ApiAssemblyM
 
         Environment.SetEnvironmentVariable("EventNotificationConsumers__PrefetchCount", "1");
         Environment.SetEnvironmentVariable("EventNotificationConsumers__ConnectionRetryDelaySeconds", "60");
+
+        Environment.SetEnvironmentVariable("Jwt__Authority", "http://localhost:18080/realms/order-system");
+        Environment.SetEnvironmentVariable("Jwt__Audience", "order-system-api");
+        Environment.SetEnvironmentVariable("Jwt__ValidIssuer", "http://localhost:18080/realms/order-system");
+        Environment.SetEnvironmentVariable("Jwt__RequireHttpsMetadata", "false");
     }
 
     private static void ClearEnvironmentVariables()
@@ -126,5 +146,10 @@ public sealed class NotificationsApiFactory : WebApplicationFactory<ApiAssemblyM
 
         Environment.SetEnvironmentVariable("EventNotificationConsumers__PrefetchCount", null);
         Environment.SetEnvironmentVariable("EventNotificationConsumers__ConnectionRetryDelaySeconds", null);
+
+        Environment.SetEnvironmentVariable("Jwt__Authority", null);
+        Environment.SetEnvironmentVariable("Jwt__Audience", null);
+        Environment.SetEnvironmentVariable("Jwt__ValidIssuer", null);
+        Environment.SetEnvironmentVariable("Jwt__RequireHttpsMetadata", null);
     }
 }

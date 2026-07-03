@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 using OrdersService.Application.Common.Pagination;
 using OrdersService.Application.Orders.Abstractions;
 using OrdersService.Application.Orders.Contracts;
+using Microsoft.AspNetCore.Authorization;
+using OrdersService.Api.Security;
 
 namespace OrdersService.Api.Controllers;
 
@@ -18,6 +20,7 @@ public sealed class OrdersController(IOrdersService ordersService) : ControllerB
 
     [HttpPost]
     [MapToApiVersion(1.0)]
+    [Authorize(Policy = AuthorizationPolicyNames.CanCreateOrder)]
     [Consumes("application/json")]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -41,6 +44,7 @@ public sealed class OrdersController(IOrdersService ordersService) : ControllerB
 
     [HttpGet("{id:guid}", Name = GetOrderByIdRouteName)]
     [MapToApiVersion(1.0)]
+    [Authorize(Policy = AuthorizationPolicyNames.AuthenticatedUser)]
     [ProducesResponseType(typeof(OrderResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<OrderResponse>> GetByIdAsync(
@@ -64,6 +68,7 @@ public sealed class OrdersController(IOrdersService ordersService) : ControllerB
 
     [HttpGet]
     [MapToApiVersion(1.0)]
+    [Authorize(Policy = AuthorizationPolicyNames.SupportOrAdmin)]
     [ProducesResponseType(typeof(PagedResult<OrderResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<PagedResult<OrderResponse>>> ListAsync(

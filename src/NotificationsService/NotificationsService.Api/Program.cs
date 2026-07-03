@@ -12,6 +12,7 @@ using NotificationsService.Infrastructure.Persistence;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using NotificationsService.Api.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -77,7 +78,10 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(
+        AuthorizationPolicyNames.CanReadNotifications,
+        policy => policy.RequireRole(RoleNames.Support, RoleNames.Admin));
 
 builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
 builder.Services.AddSwaggerGen();

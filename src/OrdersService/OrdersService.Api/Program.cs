@@ -1,17 +1,18 @@
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using OrdersService.Api.Common.Errors;
 using OrdersService.Api.Common.Health;
 using OrdersService.Api.Common.Swagger;
+using OrdersService.Api.Security;
 using OrdersService.Application;
 using OrdersService.Infrastructure;
 using OrdersService.Infrastructure.Persistence;
 using Swashbuckle.AspNetCore.SwaggerGen;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -76,7 +77,16 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(
+        AuthorizationPolicyNames.AuthenticatedUser,
+        policy => policy.RequireAuthenticatedUser())
+    .AddPolicy(
+        AuthorizationPolicyNames.SupportOrAdmin,
+        policy => policy.RequireRole(RoleNames.Support, RoleNames.Admin))
+    .AddPolicy(
+        AuthorizationPolicyNames.CanCreateOrder,
+        policy => policy.RequireAuthenticatedUser());
 
 builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
 builder.Services.AddSwaggerGen();

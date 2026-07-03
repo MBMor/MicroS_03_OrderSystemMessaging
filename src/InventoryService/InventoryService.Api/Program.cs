@@ -12,6 +12,7 @@ using Microsoft.Extensions.Options;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using InventoryService.Api.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -76,7 +77,13 @@ builder.Services
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(
+        AuthorizationPolicyNames.SupportOrAdmin,
+        policy => policy.RequireRole(RoleNames.Support, RoleNames.Admin))
+    .AddPolicy(
+        AuthorizationPolicyNames.CanManageInventory,
+        policy => policy.RequireRole(RoleNames.Admin));
 
 builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
 builder.Services.AddSwaggerGen();

@@ -3,11 +3,14 @@ using Microsoft.AspNetCore.Mvc;
 using NotificationsService.Application.Common.Pagination;
 using NotificationsService.Application.Notifications.Abstractions;
 using NotificationsService.Application.Notifications.Contracts;
+using Microsoft.AspNetCore.Authorization;
+using NotificationsService.Api.Security;
 
 namespace NotificationsService.Api.Controllers;
 
 [ApiController]
 [ApiVersion(1.0)]
+[Authorize(Policy = AuthorizationPolicyNames.CanReadNotifications)]
 [Route("api/v{version:apiVersion}/notifications")]
 [Produces("application/json")]
 public sealed class NotificationsController(INotificationsService notificationsService) : ControllerBase
