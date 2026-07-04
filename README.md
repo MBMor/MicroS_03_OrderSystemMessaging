@@ -1,25 +1,27 @@
 # MicroS 03 - Order System Messaging
 
-Training microservices project focused on asynchronous communication between services using RabbitMQ, the outbox pattern, idempotent consumers, PostgreSQL, Docker Compose, health checks, API versioning, unit tests, integration tests, and CI.
+Training microservices project focused on asynchronous communication, RabbitMQ messaging, the outbox pattern, idempotent consumers, API Gateway, Keycloak identity provider integration, JWT authentication, role-based authorization, rate limiting, health checks, PostgreSQL, Docker Compose, integration tests, and CI.
 
 The project demonstrates a simple order-processing flow:
 
-```text
-Orders Service
-  -> publishes OrderCreated
-  -> Inventory Service reserves stock
-  -> publishes StockReserved or StockReservationFailed
-  -> Orders Service updates order status
-  -> Notifications Service stores notifications
 ```
-
----
+Client
+  -> API Gateway
+  -> Orders Service
+  -> Orders DB: Order + OrderCreated outbox message
+  -> RabbitMQ: order.created
+  -> Inventory Service: stock reservation
+  -> Inventory DB: StockReservation + StockReserved / StockReservationFailed outbox message
+  -> RabbitMQ: stock.reserved / stock.reservation.failed
+  -> Orders Service: order status update
+  -> Notifications Service: notification storage
+```
 
 ## Goals
 
 This project is designed to demonstrate:
 
-```text
+```
 - microservice boundaries
 - database per service
 - asynchronous messaging with RabbitMQ
@@ -27,24 +29,32 @@ This project is designed to demonstrate:
 - outbox pattern
 - idempotent consumers
 - dead-letter queues
+- API Gateway as the public HTTP boundary
+- Keycloak as local Identity Provider
+- JWT bearer authentication
+- role-based authorization
+- public vs internal endpoint separation
+- gateway-level rate limiting
 - API versioning
 - validation
 - ProblemDetails error responses
-- health checks
+- health checks and readiness checks
 - Docker Compose orchestration
 - PostgreSQL integration tests with Testcontainers
+- API Gateway integration tests
 - unit and application service tests
 - GitHub Actions CI with test results and coverage artifacts
 ```
 
----
-
 ## Technology stack
 
-```text
+```
 .NET 10
 ASP.NET Core Web API
 Controllers
+YARP Reverse Proxy
+Keycloak
+JWT Bearer Authentication
 Entity Framework Core
 PostgreSQL
 RabbitMQ
@@ -55,15 +65,90 @@ Testcontainers
 GitHub Actions
 ```
 
----
-
 ## Services
+
+### API Gateway
+
+Responsible for:
+
+```
+- public HTTP entry point
+- reverse proxy routing with YARP
+- JWT bearer authentication
+- route-level authorization
+- role-based access control
+- gateway-level rate limiting
+- gateway health and readiness checks
+```
+
+Local URL:
+
+```
+http://localhost:5080
+```
+
+Health:
+
+```
+http://localhost:5080/health
+http://localhost:5080/health/live
+http://localhost:5080/health/ready
+```
+
+### Keycloak
+
+Responsible for:
+
+```
+- local identity provider
+- order-system realm
+- local users and roles
+- JWT access token issuing
+```
+
+Local URL:
+
+```
+http://localhost:18080
+```
+
+Admin console:
+
+```
+http://localhost:18080/admin
+```
+
+Local admin credentials:
+
+```
+admin / admin
+```
+
+Realm:
+
+```
+order-system
+```
+
+Client:
+
+```
+order-system-api
+```
+
+Users:
+
+```
+alice.customer / Alice123! / customer
+sam.support    / Sam123!   / support
+anna.admin     / Anna123!  / admin
+```
 
 ### Orders Service
 
 Responsible for:
 
-```text
+```
 - creating orders
 - storing order items
 - writing OrderCreated events to the outbox
@@ -73,32 +158,30 @@ Responsible for:
 - updating order status
 ```
 
-Local URL:
+Local debug-only URL:
 
-```text
+```
 http://localhost:5081
 ```
 
 Swagger:
 
-```text
+```
 http://localhost:5081/swagger
 ```
 
 Health:
 
-```text
+```
 http://localhost:5081/health/live
 http://localhost:5081/health/ready
 ```
-
----
 
 ### Inventory Service
 
 Responsible for:
 
-```text
+```
 - managing inventory items
 - consuming OrderCreated
 - reserving stock
@@ -107,32 +190,30 @@ Responsible for:
 - publishing inventory result events to RabbitMQ
 ```
 
-Local URL:
+Local debug-only URL:
 
-```text
+```
 http://localhost:5082
 ```
 
 Swagger:
 
-```text
+```
 http://localhost:5082/swagger
 ```
 
 Health:
 
-```text
+```
 http://localhost:5082/health/live
 http://localhost:5082/health/ready
 ```
-
----
 
 ### Notifications Service
 
 Responsible for:
 
-```text
+```
 - consuming OrderCreated
 - consuming StockReserved
 - consuming StockReservationFailed
@@ -140,31 +221,37 @@ Responsible for:
 - exposing notifications through read API endpoints
 ```
 
-Local URL:
+Local debug-only URL:
 
-```text
+```
 http://localhost:5083
 ```
 
 Swagger:
 
-```text
+```
 http://localhost:5083/swagger
 ```
 
 Health:
 
-```text
+```
 http://localhost:5083/health/live
 http://localhost:5083/health/ready
 ```
 
----
-
 ## High-level architecture
 
-```text
+```
 src/
+  ApiGateway/
+    Public HTTP boundary
+    YARP reverse proxy
+    JWT auth
+    authorization policies
+    rate limiting
+    readiness checks
+
   OrderSystem.Contracts/
     Shared integration event contracts
 
@@ -187,6 +274,8 @@ src/
     NotificationsService.Infrastructure/
 
 tests/
+  ApiGateway.IntegrationTests/
+
   OrdersService.Domain.UnitTests/
   OrdersService.Application.UnitTests/
   OrdersService.Api.PostgresIntegrationTests/
@@ -199,11 +288,176 @@ tests/
   NotificationsService.Application.UnitTests/
   NotificationsService.Api.PostgresIntegrationTests/
 
+docs/
+  security/
+    keycloak-role-mapping.md
+    public-internal-endpoints.md
+    local-curl-examples.md
+
+infra/
+  keycloak/
+    import/
+      order-system-realm.json
+
 scripts/
   smoke-test.ps1
 ```
 
----
+## Public HTTP boundary
+
+The intended public local entry point is the API Gateway:
+
+```
+http://localhost:5080
+```
+
+Client applications should call the system through the API Gateway.
+
+Downstream services are exposed on host ports only for local debugging and verification. They should not be treated as public client entry points.
+
+## Public gateway routes
+
+### Orders
+
+```
+POST /api/v1/orders
+GET  /api/v1/orders
+GET  /api/v1/orders/{id}
+```
+
+### Inventory
+
+```
+GET  /api/v1/inventory-items
+GET  /api/v1/inventory-items/{productId}
+POST /api/v1/inventory-items
+PUT  /api/v1/inventory-items/{productId}
+```
+
+### Notifications
+
+```
+GET /api/v1/notifications
+GET /api/v1/notifications/{id}
+```
+
+## Authorization model
+
+Roles:
+
+```
+customer
+support
+admin
+```
+
+Gateway policies:
+
+```
+AuthenticatedUser
+CustomerOnly
+SupportOrAdmin
+AdminOnly
+CanCreateOrder
+CanManageInventory
+CanReadNotifications
+```
+
+### Route access
+
+Orders:
+
+```
+POST /api/v1/orders      -> CanCreateOrder
+GET  /api/v1/orders/{id} -> AuthenticatedUser
+GET  /api/v1/orders      -> SupportOrAdmin
+```
+
+Inventory:
+
+```
+GET  /api/v1/inventory-items             -> SupportOrAdmin
+GET  /api/v1/inventory-items/{productId} -> SupportOrAdmin
+POST /api/v1/inventory-items             -> CanManageInventory
+PUT  /api/v1/inventory-items/{productId} -> CanManageInventory
+```
+
+Notifications:
+
+```
+GET /api/v1/notifications      -> CanReadNotifications
+GET /api/v1/notifications/{id} -> CanReadNotifications
+```
+
+## Expected security responses
+
+Missing token:
+
+```
+401 Unauthorized
+```
+
+Invalid or expired token:
+
+```
+401 Unauthorized
+```
+
+Valid token with insufficient role:
+
+```
+403 Forbidden
+```
+
+Rate limit exceeded:
+
+```
+429 Too Many Requests
+```
+
+Unknown gateway route:
+
+```
+404 Not Found
+```
+
+Wrong method on known resource path:
+
+```
+405 Method Not Allowed
+```
+
+## Rate limiting
+
+The API Gateway uses in-memory rate limiting.
+
+Policies:
+
+```
+OrderCreationLimit      -> 5 requests / minute
+AuthenticatedUserLimit  -> 60 requests / minute
+AdminEndpointLimit      -> 30 requests / minute
+```
+
+Applied routes:
+
+```
+POST /api/v1/orders -> OrderCreationLimit
+```
+
+General protected read routes use:
+
+```
+AuthenticatedUserLimit
+```
+
+Admin/write inventory routes use:
+
+```
+AdminEndpointLimit
+```
+
+This is suitable for local single-instance learning. A real multi-instance gateway would require a distributed rate limiting strategy.
 
 ## Message broker
 
@@ -211,13 +465,13 @@ RabbitMQ is used with a topic exchange.
 
 Exchange:
 
-```text
+```
 ordersystem.events
 ```
 
 Routing keys:
 
-```text
+```
 order.created
 stock.reserved
 stock.reservation.failed
@@ -225,7 +479,7 @@ stock.reservation.failed
 
 Main queues:
 
-```text
+```
 inventory.order-created
 
 orders.stock-reserved
@@ -238,7 +492,7 @@ notifications.stock-reservation-failed
 
 Dead-letter queues:
 
-```text
+```
 inventory.order-created.dlq
 
 orders.stock-reserved.dlq
@@ -246,165 +500,134 @@ orders.stock-reservation-failed.dlq
 
 notifications.order-created.dlq
 notifications.stock-reserved.dlq
-notifications.stock-reservation-failed.dlq
+notifications.stock.reservation.failed.dlq
 ```
 
 RabbitMQ Management UI:
 
-```text
+```
 http://localhost:15672
 ```
 
 Credentials:
 
-```text
+```
 guest / guest
 ```
 
----
+## Databases
 
-## Main business flow
+Each service owns its own PostgreSQL database.
 
-### Successful stock reservation
+Orders DB:
 
-```text
-1. Client creates inventory item.
-2. Client creates order.
-3. Orders Service stores order with status PendingStockReservation.
-4. Orders Service writes OrderCreated to OutboxMessages.
-5. Orders outbox publisher publishes order.created to RabbitMQ.
-6. Inventory Service consumes order.created.
-7. Inventory Service reserves stock.
-8. Inventory Service stores StockReservation with status Reserved.
-9. Inventory Service writes StockReserved to OutboxMessages.
-10. Inventory outbox publisher publishes stock.reserved to RabbitMQ.
-11. Orders Service consumes stock.reserved.
-12. Orders Service updates order status to StockReserved.
-13. Notifications Service stores OrderCreated and StockReserved notifications.
+```
+ordersdb
+localhost:5433
 ```
 
-Expected final state:
+Inventory DB:
 
-```text
-Order.Status = StockReserved
-Inventory.AvailableQuantity decreases
-Inventory.ReservedQuantity increases
-Notifications contain OrderCreated and StockReserved notifications
+```
+inventorydb
+localhost:5434
 ```
 
----
+Notifications DB:
 
-### Failed stock reservation
-
-```text
-1. Client creates order with unavailable quantity.
-2. Orders Service stores order with status PendingStockReservation.
-3. Orders Service publishes OrderCreated through the outbox.
-4. Inventory Service consumes OrderCreated.
-5. Inventory Service cannot reserve stock.
-6. Inventory Service stores StockReservation with status Failed.
-7. Inventory Service writes StockReservationFailed to the outbox.
-8. Inventory outbox publisher publishes stock.reservation.failed.
-9. Orders Service consumes stock.reservation.failed.
-10. Orders Service updates order status to StockReservationFailed.
-11. Notifications Service stores OrderCreated and StockReservationFailed notifications.
+```
+notificationsdb
+localhost:5435
 ```
 
-Expected final state:
+Keycloak DB:
 
-```text
-Order.Status = StockReservationFailed
-Inventory quantities remain unchanged
-Notifications contain OrderCreated and StockReservationFailed notifications
+```
+keycloak
 ```
 
----
+The project does not run EF Core migrations automatically at application startup.
 
-## Local prerequisites
+## Prerequisites
 
 Required tools:
 
-```text
-.NET 10 SDK
+```
+.NET SDK 10
 Docker Desktop
 EF Core CLI tools
-PowerShell 7+ recommended for smoke-test.ps1
+curl
+jq
 ```
 
-Check .NET:
+Check EF Core tools:
 
-```bash
-dotnet --info
 ```
-
-Check EF Core CLI tools:
-
-```bash
 dotnet ef --version
 ```
 
-Install EF Core CLI tools if missing:
+Install EF Core tools if missing:
 
-```bash
+```
 dotnet tool install --global dotnet-ef
 ```
 
----
-
 ## Local setup
 
-### 1. Start infrastructure only
+### 1. Start infrastructure
 
-For a clean local verification, remove existing containers and volumes:
+For a clean verification, remove existing containers and volumes:
 
-```bash
+```
 docker compose down -v
 ```
 
-Start PostgreSQL databases and RabbitMQ:
+Start the full stack:
 
-```bash
-docker compose up -d orders-db inventory-db notifications-db rabbitmq
+```
+docker compose up -d --build
 ```
 
-Check status:
+Check containers:
 
-```bash
+```
 docker compose ps
 ```
 
-Expected infrastructure containers:
+Expected important containers:
 
-```text
-orders-db          healthy
-inventory-db       healthy
-notifications-db   healthy
-rabbitmq           healthy
 ```
-
----
+api-gateway
+keycloak
+keycloak-db
+orders-api
+inventory-api
+notifications-api
+orders-db
+inventory-db
+notifications-db
+rabbitmq
+```
 
 ### 2. Apply EF Core migrations
 
-The project does not run database migrations automatically at application startup.
-
-Set environment first.
+Set development environment.
 
 PowerShell:
 
-```powershell
+```
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 ```
 
 Bash:
 
-```bash
+```
 export ASPNETCORE_ENVIRONMENT=Development
 ```
 
 Apply migrations:
 
-```bash
+```
 dotnet ef database update \
   --project src/OrdersService/OrdersService.Infrastructure \
   --startup-project src/OrdersService/OrdersService.Api
@@ -418,159 +641,90 @@ dotnet ef database update \
   --startup-project src/NotificationsService/NotificationsService.Api
 ```
 
----
+### 3. Verify health endpoints
 
-### 3. Start all services
+Gateway:
 
-```bash
-docker compose up -d --build
+```
+curl -i http://localhost:5080/health
+curl -i http://localhost:5080/health/live
+curl -i http://localhost:5080/health/ready
 ```
 
-Check status:
+Downstream debug-only health endpoints:
 
-```bash
-docker compose ps
+```
+curl -i http://localhost:5081/health/ready
+curl -i http://localhost:5082/health/ready
+curl -i http://localhost:5083/health/ready
 ```
 
-Expected containers:
+Expected:
 
-```text
-orders-api          healthy
-inventory-api       healthy
-notifications-api   healthy
-orders-db           healthy
-inventory-db        healthy
-notifications-db    healthy
-rabbitmq            healthy
 ```
-
----
-
-## Health checks
-
-Orders:
-
-```bash
-curl http://localhost:5081/health/ready
-```
-
-Inventory:
-
-```bash
-curl http://localhost:5082/health/ready
-```
-
-Notifications:
-
-```bash
-curl http://localhost:5083/health/ready
-```
-
-Expected result:
-
-```text
 Healthy
 ```
 
-or JSON with:
+or JSON response with:
 
-```json
-{
-  "status": "Healthy"
-}
+```
+"status": "Healthy"
 ```
 
----
+## Local token retrieval
 
-## API endpoints
+Customer token:
 
-### Orders API
-
-Create order:
-
-```http
-POST /api/v1/orders
+```
+CUSTOMER_TOKEN=$(curl -s -X POST "http://localhost:18080/realms/order-system/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=order-system-api" \
+  -d "grant_type=password" \
+  -d "username=alice.customer" \
+  -d "password=Alice123!" | jq -r ".access_token")
 ```
 
-Get order by ID:
+Support token:
 
-```http
-GET /api/v1/orders/{id}
+```
+SUPPORT_TOKEN=$(curl -s -X POST "http://localhost:18080/realms/order-system/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=order-system-api" \
+  -d "grant_type=password" \
+  -d "username=sam.support" \
+  -d "password=Sam123!" | jq -r ".access_token")
 ```
 
-List orders:
+Admin token:
 
-```http
-GET /api/v1/orders?page=1&pageSize=20
+```
+ADMIN_TOKEN=$(curl -s -X POST "http://localhost:18080/realms/order-system/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=order-system-api" \
+  -d "grant_type=password" \
+  -d "username=anna.admin" \
+  -d "password=Anna123!" | jq -r ".access_token")
 ```
 
----
+More examples:
 
-### Inventory API
-
-Create inventory item:
-
-```http
-POST /api/v1/inventory-items
+```
+docs/security/local-curl-examples.md
 ```
 
-Get inventory item by product ID:
-
-```http
-GET /api/v1/inventory-items/{productId}
-```
-
-Update inventory item:
-
-```http
-PUT /api/v1/inventory-items/{productId}
-```
-
-List inventory items:
-
-```http
-GET /api/v1/inventory-items?page=1&pageSize=20
-```
-
----
-
-### Notifications API
-
-Get notification by ID:
-
-```http
-GET /api/v1/notifications/{id}
-```
-
-List notifications:
-
-```http
-GET /api/v1/notifications?page=1&pageSize=20
-```
-
-Filter notifications:
-
-```http
-GET /api/v1/notifications?sourceEventType=OrderCreated
-GET /api/v1/notifications?status=Created
-```
-
----
-
-## Manual verification
+## Manual verification through API Gateway
 
 Use this product ID for manual examples:
 
-```text
+```
 aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
 ```
 
----
+### 1. Create inventory item as admin
 
-### 1. Create inventory item
-
-```bash
-curl -X POST "http://localhost:5082/api/v1/inventory-items" \
+```
+curl -i -X POST "http://localhost:5080/api/v1/inventory-items" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "productId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -581,8 +735,9 @@ curl -X POST "http://localhost:5082/api/v1/inventory-items" \
 
 If the item already exists, update it:
 
-```bash
-curl -X PUT "http://localhost:5082/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" \
+```
+curl -i -X PUT "http://localhost:5080/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "productName": "Keyboard",
@@ -592,23 +747,23 @@ curl -X PUT "http://localhost:5082/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-ddd
 
 Verify inventory item:
 
-```bash
-curl "http://localhost:5082/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+```
+curl -i "http://localhost:5080/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN"
 ```
 
 Expected values:
 
-```text
+```
 availableQuantity = 50
 reservedQuantity = 0
 ```
 
----
+### 2. Create order as customer
 
-### 2. Create order with available stock
-
-```bash
-curl -X POST "http://localhost:5081/api/v1/orders" \
+```
+curl -i -X POST "http://localhost:5080/api/v1/orders" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "customerName": "John Doe",
@@ -623,73 +778,70 @@ curl -X POST "http://localhost:5081/api/v1/orders" \
   }'
 ```
 
-Copy the returned order `id`.
+Copy the returned order ID.
 
 Immediately after creation, the order may have this status:
 
-```text
+```
 PendingStockReservation
 ```
 
 After asynchronous processing completes, it should become:
 
-```text
+```
 StockReserved
 ```
 
-Verify order:
+### 3. Verify order status
 
-```bash
-curl "http://localhost:5081/api/v1/orders/{orderId}"
+Replace `{orderId}` with the returned order ID:
+
+```
+curl -i "http://localhost:5080/api/v1/orders/{orderId}" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN"
 ```
 
 Expected final status:
 
-```json
-{
-  "status": "StockReserved"
-}
+```
+StockReserved
 ```
 
-Verify inventory item:
+### 4. Verify inventory quantity
 
-```bash
-curl "http://localhost:5082/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+```
+curl -i "http://localhost:5080/api/v1/inventory-items/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN"
 ```
 
 Expected values:
 
-```text
+```
 availableQuantity = 48
 reservedQuantity = 2
 ```
 
-Verify notifications:
+### 5. Verify notifications
 
-```bash
-curl "http://localhost:5083/api/v1/notifications?page=1&pageSize=20"
+```
+curl -i "http://localhost:5080/api/v1/notifications?page=1&pageSize=20" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN"
 ```
 
 Expected notifications include:
 
-```text
+```
 OrderCreated
 StockReserved
 ```
 
-Example subjects:
+## Failed stock reservation scenario
 
-```text
-Order {orderId} was created
-Stock reserved for order {orderId}
+Create an order with unavailable quantity:
+
 ```
-
----
-
-### 3. Create order with insufficient stock
-
-```bash
-curl -X POST "http://localhost:5081/api/v1/orders" \
+curl -i -X POST "http://localhost:5080/api/v1/orders" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "customerName": "Jane Doe",
@@ -704,130 +856,42 @@ curl -X POST "http://localhost:5081/api/v1/orders" \
   }'
 ```
 
-Copy the returned order `id`.
+Copy the returned order ID.
 
-Verify order:
+Verify order status:
 
-```bash
-curl "http://localhost:5081/api/v1/orders/{orderId}"
+```
+curl -i "http://localhost:5080/api/v1/orders/{orderId}" \
+  -H "Authorization: Bearer $CUSTOMER_TOKEN"
 ```
 
 Expected final status:
 
-```json
-{
-  "status": "StockReservationFailed"
-}
+```
+StockReservationFailed
 ```
 
 Verify notifications:
 
-```bash
-curl "http://localhost:5083/api/v1/notifications?page=1&pageSize=20"
+```
+curl -i "http://localhost:5080/api/v1/notifications?page=1&pageSize=20" \
+  -H "Authorization: Bearer $SUPPORT_TOKEN"
 ```
 
 Expected notifications include:
 
-```text
+```
 OrderCreated
 StockReservationFailed
 ```
 
-Example subjects:
-
-```text
-Order {orderId} was created
-Stock reservation failed for order {orderId}
-```
-
----
-
-## Local smoke test script
-
-A PowerShell smoke test is available in:
-
-```text
-scripts/smoke-test.ps1
-```
-
-The script verifies the main asynchronous flow through public HTTP APIs:
-
-```text
-Orders API
-  -> RabbitMQ
-  -> Inventory API
-  -> RabbitMQ
-  -> Orders API
-  -> Notifications API
-```
-
-It checks both scenarios:
-
-```text
-1. Successful stock reservation
-2. Failed stock reservation because of insufficient stock
-```
-
-### Prerequisites
-
-Make sure the full Docker Compose stack is running and database migrations are already applied.
-
-Start the stack:
-
-```bash
-docker compose up -d --build
-```
-
-Check container status:
-
-```bash
-docker compose ps
-```
-
-Run the smoke test with PowerShell 7+:
-
-```powershell
-pwsh ./scripts/smoke-test.ps1
-```
-
-Run the smoke test with Windows PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\smoke-test.ps1
-```
-
-Override service URLs:
-
-```powershell
-pwsh ./scripts/smoke-test.ps1 `
-  -OrdersBaseUrl "http://localhost:5081" `
-  -InventoryBaseUrl "http://localhost:5082" `
-  -NotificationsBaseUrl "http://localhost:5083"
-```
-
-Increase timeout for slower machines:
-
-```powershell
-pwsh ./scripts/smoke-test.ps1 -TimeoutSeconds 180
-```
-
-Expected final output:
-
-```text
-Smoke test completed successfully.
-```
-
-The smoke test is a black-box HTTP verification. It does not connect directly to PostgreSQL or RabbitMQ.
-
----
-
 ## Database verification
-
-You can inspect the data directly in PostgreSQL.
 
 ### Orders DB
 
-```bash
+List orders:
+
+```
 docker exec orders-db psql -U postgres -d ordersdb -c '
 select
   "Id",
@@ -841,7 +905,7 @@ order by "CreatedAtUtc" desc;
 
 Check Orders outbox:
 
-```bash
+```
 docker exec orders-db psql -U postgres -d ordersdb -c '
 select
   "EventType",
@@ -858,7 +922,7 @@ order by "OccurredAtUtc" desc;
 
 Check processed messages:
 
-```bash
+```
 docker exec orders-db psql -U postgres -d ordersdb -c '
 select
   "MessageId",
@@ -870,11 +934,11 @@ order by "ProcessedAtUtc" desc;
 '
 ```
 
----
-
 ### Inventory DB
 
-```bash
+List inventory:
+
+```
 docker exec inventory-db psql -U postgres -d inventorydb -c '
 select
   "ProductId",
@@ -887,7 +951,7 @@ from "InventoryItems";
 
 Check stock reservations:
 
-```bash
+```
 docker exec inventory-db psql -U postgres -d inventorydb -c '
 select
   "OrderId",
@@ -901,7 +965,7 @@ order by "CreatedAtUtc" desc;
 
 Check Inventory outbox:
 
-```bash
+```
 docker exec inventory-db psql -U postgres -d inventorydb -c '
 select
   "EventType",
@@ -918,7 +982,7 @@ order by "OccurredAtUtc" desc;
 
 Check processed messages:
 
-```bash
+```
 docker exec inventory-db psql -U postgres -d inventorydb -c '
 select
   "MessageId",
@@ -930,11 +994,11 @@ order by "ProcessedAtUtc" desc;
 '
 ```
 
----
-
 ### Notifications DB
 
-```bash
+List notifications:
+
+```
 docker exec notifications-db psql -U postgres -d notificationsdb -c '
 select
   "SourceEventType",
@@ -949,7 +1013,7 @@ order by "CreatedAtUtc" desc;
 
 Check processed messages:
 
-```bash
+```
 docker exec notifications-db psql -U postgres -d notificationsdb -c '
 select
   "MessageId",
@@ -961,210 +1025,123 @@ order by "ProcessedAtUtc" desc;
 '
 ```
 
----
-
-## RabbitMQ verification
-
-Open RabbitMQ Management UI:
-
-```text
-http://localhost:15672
-```
-
-Credentials:
-
-```text
-guest / guest
-```
-
-Expected main queues after successful processing:
-
-```text
-inventory.order-created                       0 messages
-orders.stock-reserved                         0 messages
-orders.stock-reservation-failed               0 messages
-notifications.order-created                   0 messages
-notifications.stock-reserved                  0 messages
-notifications.stock-reservation-failed        0 messages
-```
-
-Expected DLQ queues:
-
-```text
-inventory.order-created.dlq                   0 messages
-orders.stock-reserved.dlq                     0 messages
-orders.stock-reservation-failed.dlq           0 messages
-notifications.order-created.dlq               0 messages
-notifications.stock-reserved.dlq              0 messages
-notifications.stock-reservation-failed.dlq    0 messages
-```
-
-If a DLQ contains messages, inspect the corresponding service logs.
-
----
-
-## Logs
-
-Orders:
-
-```bash
-docker compose logs orders-api --tail=200
-```
-
-Inventory:
-
-```bash
-docker compose logs inventory-api --tail=200
-```
-
-Notifications:
-
-```bash
-docker compose logs notifications-api --tail=200
-```
-
-RabbitMQ:
-
-```bash
-docker compose logs rabbitmq --tail=200
-```
-
----
-
 ## Tests
 
-The repository contains three main test groups:
+The repository contains these test groups:
 
-```text
+```
 Domain unit tests
 Application unit tests
 PostgreSQL API integration tests
+API Gateway integration tests
 ```
-
-There are no automated E2E tests in the repository at this stage. End-to-end behavior is verified locally through Docker Compose and `scripts/smoke-test.ps1`.
-
----
 
 ### Domain unit tests
 
-Domain unit tests validate business rules without database, API host, or RabbitMQ.
-
 Projects:
 
-```text
+```
 tests/OrdersService.Domain.UnitTests
 tests/InventoryService.Domain.UnitTests
 tests/NotificationsService.Domain.UnitTests
 ```
 
-Run all domain unit tests:
+Run:
 
-```bash
+```
 dotnet test tests/OrdersService.Domain.UnitTests/OrdersService.Domain.UnitTests.csproj
 dotnet test tests/InventoryService.Domain.UnitTests/InventoryService.Domain.UnitTests.csproj
 dotnet test tests/NotificationsService.Domain.UnitTests/NotificationsService.Domain.UnitTests.csproj
 ```
 
----
-
 ### Application unit tests
-
-Application unit tests verify application services using EF Core InMemory.
 
 Projects:
 
-```text
+```
 tests/OrdersService.Application.UnitTests
 tests/InventoryService.Application.UnitTests
 tests/NotificationsService.Application.UnitTests
 ```
 
-Run all application unit tests:
+Run:
 
-```bash
+```
 dotnet test tests/OrdersService.Application.UnitTests/OrdersService.Application.UnitTests.csproj
 dotnet test tests/InventoryService.Application.UnitTests/InventoryService.Application.UnitTests.csproj
 dotnet test tests/NotificationsService.Application.UnitTests/NotificationsService.Application.UnitTests.csproj
 ```
 
-Note:
-
-```text
-EF Core InMemory is used only for fast application service tests.
-It is not a replacement for PostgreSQL integration tests.
-```
-
----
+EF Core InMemory is used only for fast application service tests. It is not a replacement for PostgreSQL integration tests.
 
 ### PostgreSQL API integration tests
 
-PostgreSQL API integration tests use Testcontainers and require Docker.
-
-They verify:
-
-```text
-- controller routing
-- API versioning
-- HTTP status codes
-- request validation behavior
-- EF Core mapping
-- PostgreSQL schema and migrations
-- persistence through real PostgreSQL
-```
-
 Projects:
 
-```text
+```
 tests/OrdersService.Api.PostgresIntegrationTests
 tests/InventoryService.Api.PostgresIntegrationTests
 tests/NotificationsService.Api.PostgresIntegrationTests
 ```
 
-Run Orders API PostgreSQL integration tests:
+They verify:
 
-```bash
-dotnet test tests/OrdersService.Api.PostgresIntegrationTests/OrdersService.Api.PostgresIntegrationTests.csproj
+```
+- controller routing
+- API versioning
+- HTTP status codes
+- request validation behavior
+- authorization behavior
+- EF Core mapping
+- PostgreSQL schema and migrations
+- persistence through real PostgreSQL
 ```
 
-Run Inventory API PostgreSQL integration tests:
+Run:
 
-```bash
-dotnet test tests/InventoryService.Api.PostgresIntegrationTests/InventoryService.Api.PostgresIntegrationTests.csproj
 ```
-
-Run Notifications API PostgreSQL integration tests:
-
-```bash
-dotnet test tests/NotificationsService.Api.PostgresIntegrationTests/NotificationsService.Api.PostgresIntegrationTests.csproj
-```
-
-Run all PostgreSQL API integration tests:
-
-```bash
 dotnet test tests/OrdersService.Api.PostgresIntegrationTests/OrdersService.Api.PostgresIntegrationTests.csproj
 dotnet test tests/InventoryService.Api.PostgresIntegrationTests/InventoryService.Api.PostgresIntegrationTests.csproj
 dotnet test tests/NotificationsService.Api.PostgresIntegrationTests/NotificationsService.Api.PostgresIntegrationTests.csproj
 ```
 
-Docker Desktop must be running before executing integration tests.
+Docker Desktop must be running before executing PostgreSQL integration tests.
 
----
+### API Gateway integration tests
+
+Project:
+
+```
+tests/ApiGateway.IntegrationTests
+```
+
+They verify:
+
+```
+- authorized gateway routing
+- internal endpoint protection
+- gateway rate limiting
+- gateway routing without real downstream services
+- gateway behavior without real Keycloak
+```
+
+Run:
+
+```
+dotnet test tests/ApiGateway.IntegrationTests/ApiGateway.IntegrationTests.csproj --filter Category=Integration
+```
 
 ### Run all tests
 
-```bash
+```
 dotnet test OrderSystemMessaging.slnx
 ```
-
-This runs all test projects included in the solution.
-
----
 
 ## Code coverage
 
 The CI workflow collects code coverage using:
 
-```text
+```
 coverlet.collector
 XPlat Code Coverage
 Cobertura XML
@@ -1172,7 +1149,7 @@ Cobertura XML
 
 Run tests with coverage locally:
 
-```bash
+```
 dotnet test OrderSystemMessaging.slnx \
   --configuration Release \
   --collect:"XPlat Code Coverage" \
@@ -1182,43 +1159,41 @@ dotnet test OrderSystemMessaging.slnx \
 
 Coverage files are generated under:
 
-```text
+```
 TestResults/
 ```
 
 The generated coverage files are usually named:
 
-```text
+```
 coverage.cobertura.xml
 ```
 
-The current CI workflow uploads coverage XML files as an artifact named:
+The CI workflow uploads coverage XML files as an artifact named:
 
-```text
+```
 coverage-reports
 ```
 
 It also uploads test result files as an artifact named:
 
-```text
+```
 test-results
 ```
 
-The current CI workflow collects and publishes coverage artifacts but does not enforce a minimum coverage threshold.
-
----
+The CI workflow collects and publishes coverage artifacts but does not enforce a minimum coverage threshold.
 
 ## GitHub Actions
 
 The repository contains a CI workflow:
 
-```text
+```
 .github/workflows/ci.yml
 ```
 
 The workflow runs on:
 
-```text
+```
 push
 pull_request
 workflow_dispatch
@@ -1226,7 +1201,7 @@ workflow_dispatch
 
 It performs:
 
-```text
+```
 dotnet restore
 dotnet build
 dotnet test with coverage
@@ -1236,28 +1211,70 @@ upload coverage reports
 
 Artifacts:
 
-```text
+```
 test-results
 coverage-reports
 ```
 
----
+## Documentation
+
+Security and gateway documentation:
+
+```
+docs/security/keycloak-role-mapping.md
+docs/security/public-internal-endpoints.md
+docs/security/local-curl-examples.md
+```
+
+Keycloak local setup:
+
+```
+infra/keycloak/README.md
+```
 
 ## Troubleshooting
 
-### API container is unhealthy
+### API Gateway is unhealthy
+
+Check gateway readiness:
+
+```
+curl -i http://localhost:5080/health/ready
+```
+
+Check gateway logs:
+
+```
+docker compose logs api-gateway --tail=200
+```
+
+Check downstream readiness:
+
+```
+curl -i http://localhost:5081/health/ready
+curl -i http://localhost:5082/health/ready
+curl -i http://localhost:5083/health/ready
+```
+
+Check Keycloak:
+
+```
+curl -i http://localhost:18080/realms/order-system
+```
+
+### Downstream API container is unhealthy
 
 Check readiness endpoints from the host:
 
-```bash
-curl http://localhost:5081/health/ready
-curl http://localhost:5082/health/ready
-curl http://localhost:5083/health/ready
+```
+curl -i http://localhost:5081/health/ready
+curl -i http://localhost:5082/health/ready
+curl -i http://localhost:5083/health/ready
 ```
 
 Then check the same endpoints from inside containers:
 
-```bash
+```
 docker exec orders-api curl --fail http://localhost:8080/health/ready
 docker exec inventory-api curl --fail http://localhost:8080/health/ready
 docker exec notifications-api curl --fail http://localhost:8080/health/ready
@@ -1265,13 +1282,11 @@ docker exec notifications-api curl --fail http://localhost:8080/health/ready
 
 Inspect logs:
 
-```bash
+```
 docker compose logs orders-api --tail=200
 docker compose logs inventory-api --tail=200
 docker compose logs notifications-api --tail=200
 ```
-
----
 
 ### Error: relation does not exist
 
@@ -1279,7 +1294,7 @@ The database exists, but EF Core migrations were not applied.
 
 Run:
 
-```bash
+```
 dotnet ef database update \
   --project src/OrdersService/OrdersService.Infrastructure \
   --startup-project src/OrdersService/OrdersService.Api
@@ -1293,148 +1308,178 @@ dotnet ef database update \
   --startup-project src/NotificationsService/NotificationsService.Api
 ```
 
----
+### Token request fails
 
-### Inventory item already exists
+Check Keycloak container:
 
-The manual examples use a fixed product ID:
-
-```text
-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
+```
+docker compose logs keycloak --tail=200
 ```
 
-If you run the examples repeatedly, creating the same inventory item can return conflict.
+Check realm endpoint:
 
-Use one of these options:
-
-```text
-- update the existing item with PUT
-- use a different productId
-- reset the local environment with docker compose down -v
+```
+curl -i http://localhost:18080/realms/order-system
 ```
 
----
+If the realm does not exist, restart Keycloak with import enabled:
 
-### Outbox messages stay Pending
-
-Check whether RabbitMQ is running:
-
-```bash
-docker compose ps rabbitmq
+```
+docker compose down
+docker compose up -d keycloak-db keycloak
 ```
 
-Open RabbitMQ Management UI:
+### Gateway returns 401
 
-```text
-http://localhost:15672
+Common causes:
+
+```
+- missing Authorization header
+- expired token
+- wrong token issuer
+- wrong audience
+- token was not obtained from the local order-system realm
 ```
 
-Verify that these exist:
+Get a fresh token and retry.
 
-```text
-ordersystem.events exchange
-inventory.order-created queue
-orders.stock-reserved queue
-orders.stock-reservation-failed queue
-notifications.order-created queue
-notifications.stock-reserved queue
-notifications.stock-reservation-failed queue
+### Gateway returns 403
+
+The token is valid, but the user does not have the required role.
+
+Examples:
+
+```
+customer cannot list all orders
+customer cannot read inventory
+customer cannot read notifications
+support cannot create or update inventory items
 ```
 
-Inspect service logs:
+### Gateway returns 429
 
-```bash
-docker compose logs orders-api --tail=200
-docker compose logs inventory-api --tail=200
-docker compose logs notifications-api --tail=200
+The request was rejected by rate limiting.
+
+Wait until the rate limit window resets and retry.
+
+### Gateway returns 404 for internal paths
+
+This is expected.
+
+Examples that should not be exposed through the gateway:
+
+```
+/api/v1/orders/swagger
+/api/v1/inventory-items/swagger
+/api/v1/notifications/swagger
+/api/v1/orders/internal/status
+/api/v1/inventory-items/internal/status
+/api/v1/notifications/internal/status
 ```
 
----
+### Gateway internal endpoint protection tests fail with 200 OK
 
-### Messages appear in DLQ
+Check API Gateway route constraints.
 
-A DLQ message usually means that a consumer received a message but failed while processing it.
+ID routes should not match arbitrary text such as `swagger`.
 
-Typical causes:
+Use GUID constraints for ID-like gateway routes:
 
-```text
-invalid JSON payload
-validation failure
-missing database record
-invalid order state transition
-database exception
 ```
-
-Inspect the corresponding service logs and the DLQ message payload in RabbitMQ Management UI.
-
----
+/api/v1/orders/{id:guid}
+/api/v1/inventory-items/{productId:guid}
+/api/v1/notifications/{id:guid}
+```
 
 ### Testcontainers tests fail locally
 
 Check that Docker Desktop is running.
 
-Then run one integration test project directly:
+Run one integration test project directly:
 
-```bash
+```
 dotnet test tests/OrdersService.Api.PostgresIntegrationTests/OrdersService.Api.PostgresIntegrationTests.csproj
 ```
 
 If Docker is not available, PostgreSQL integration tests cannot run.
 
----
-
-## Current limitations
-
-This project intentionally does not include:
-
-```text
-- authentication and authorization
-- API Gateway
-- distributed tracing
-- metrics dashboard
-- production secrets management
-- Kubernetes deployment
-- automated RabbitMQ E2E tests
-```
-
-Those are intended for later microservices training projects.
-
----
-
 ## Useful commands
 
 Build solution:
 
-```bash
+```
 dotnet build OrderSystemMessaging.slnx
 ```
 
 Run all tests:
 
-```bash
+```
 dotnet test OrderSystemMessaging.slnx
+```
+
+Run API Gateway integration tests:
+
+```
+dotnet test tests/ApiGateway.IntegrationTests/ApiGateway.IntegrationTests.csproj --filter Category=Integration
 ```
 
 Start local stack:
 
-```bash
+```
 docker compose up -d --build
 ```
 
 Stop local stack:
 
-```bash
+```
 docker compose down
 ```
 
 Stop local stack and remove volumes:
 
-```bash
+```
 docker compose down -v
 ```
 
 Run smoke test:
 
-```powershell
+```
 pwsh ./scripts/smoke-test.ps1
 ```
+
+Show gateway logs:
+
+```
+docker compose logs api-gateway --tail=200
+```
+
+Show Keycloak logs:
+
+```
+docker compose logs keycloak --tail=200
+```
+
+Show RabbitMQ logs:
+
+```
+docker compose logs rabbitmq --tail=200
+```
+
+## Current limitations
+
+This is a local learning project.
+
+The project does not currently include:
+
+```
+- production HTTPS setup
+- production-grade secrets management
+- distributed rate limiting
+- distributed tracing
+- metrics dashboard
+- centralized log aggregation
+- Kubernetes deployment
+- automated full RabbitMQ E2E test suite
+```
+
+These topics are intended for later microservices training projects.
