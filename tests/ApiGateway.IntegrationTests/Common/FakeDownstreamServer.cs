@@ -27,7 +27,27 @@ public sealed class FakeDownstreamServer : IAsyncDisposable
 
         var app = builder.Build();
 
+        app.Use(async (context, next) =>
+        {
+            context.Response.Headers["X-Fake-Service"] = serviceName;
+            await next(context);
+        });
+
+        app.MapGet("/health/live", () => Results.Ok("Healthy"));
         app.MapGet("/health/ready", () => Results.Ok("Healthy"));
+
+        app.MapGet("/swagger", () => Results.Ok($"Fake {serviceName} Swagger UI"));
+        app.MapGet("/swagger/v1/swagger.json", () => Results.Json(new
+        {
+            service = serviceName,
+            document = "swagger"
+        }));
+
+        app.MapGet("/internal/status", () => Results.Ok(new
+        {
+            service = serviceName,
+            status = "internal"
+        }));
 
         MapServiceRoutes(app, serviceName);
 
@@ -81,75 +101,116 @@ public sealed class FakeDownstreamServer : IAsyncDisposable
     {
         app.MapGet(
             "/api/v1/orders",
-            (HttpResponse response) => JsonResponse(response, "orders", "orders-list"));
+            () => Results.Json(new
+            {
+                service = "orders",
+                endpoint = "orders-list"
+            }));
 
         app.MapGet(
             "/api/v1/orders/{id:guid}",
-            (HttpResponse response) => JsonResponse(response, "orders", "orders-get-by-id"));
+            () => Results.Json(new
+            {
+                service = "orders",
+                endpoint = "orders-get-by-id"
+            }));
 
         app.MapPost(
             "/api/v1/orders",
-            (HttpResponse response) => CreatedResponse(response, "orders", "orders-create"));
+            () => Results.Created(
+                "/fake/orders-create",
+                new
+                {
+                    service = "orders",
+                    endpoint = "orders-create"
+                }));
+
+        app.MapGet(
+            "/api/v1/orders/internal/status",
+            () => Results.Ok(new
+            {
+                service = "orders",
+                endpoint = "orders-internal-status"
+            }));
+
+        app.MapGet(
+            "/api/v1/orders/swagger",
+            () => Results.Ok("Fake Orders Swagger"));
     }
 
     private static void MapInventoryRoutes(WebApplication app)
     {
         app.MapGet(
             "/api/v1/inventory-items",
-            (HttpResponse response) => JsonResponse(response, "inventory", "inventory-list"));
+            () => Results.Json(new
+            {
+                service = "inventory",
+                endpoint = "inventory-list"
+            }));
 
         app.MapGet(
             "/api/v1/inventory-items/{productId:guid}",
-            (HttpResponse response) => JsonResponse(response, "inventory", "inventory-get-by-product-id"));
+            () => Results.Json(new
+            {
+                service = "inventory",
+                endpoint = "inventory-get-by-product-id"
+            }));
 
         app.MapPost(
             "/api/v1/inventory-items",
-            (HttpResponse response) => CreatedResponse(response, "inventory", "inventory-create"));
+            () => Results.Created(
+                "/fake/inventory-create",
+                new
+                {
+                    service = "inventory",
+                    endpoint = "inventory-create"
+                }));
 
         app.MapPut(
             "/api/v1/inventory-items/{productId:guid}",
-            (HttpResponse response) => NoContentResponse(response, "inventory"));
+            () => Results.NoContent());
+
+        app.MapGet(
+            "/api/v1/inventory-items/internal/status",
+            () => Results.Ok(new
+            {
+                service = "inventory",
+                endpoint = "inventory-internal-status"
+            }));
+
+        app.MapGet(
+            "/api/v1/inventory-items/swagger",
+            () => Results.Ok("Fake Inventory Swagger"));
     }
 
     private static void MapNotificationsRoutes(WebApplication app)
     {
         app.MapGet(
             "/api/v1/notifications",
-            (HttpResponse response) => JsonResponse(response, "notifications", "notifications-list"));
+            () => Results.Json(new
+            {
+                service = "notifications",
+                endpoint = "notifications-list"
+            }));
 
         app.MapGet(
             "/api/v1/notifications/{id:guid}",
-            (HttpResponse response) => JsonResponse(response, "notifications", "notifications-get-by-id"));
-    }
-
-    private static IResult JsonResponse(HttpResponse response, string service, string endpoint)
-    {
-        response.Headers["X-Fake-Service"] = service;
-
-        return Results.Json(new
-        {
-            service,
-            endpoint
-        });
-    }
-
-    private static IResult CreatedResponse(HttpResponse response, string service, string endpoint)
-    {
-        response.Headers["X-Fake-Service"] = service;
-
-        return Results.Created(
-            $"/fake/{endpoint}",
-            new
+            () => Results.Json(new
             {
-                service,
-                endpoint
-            });
-    }
+                service = "notifications",
+                endpoint = "notifications-get-by-id"
+            }));
 
-    private static IResult NoContentResponse(HttpResponse response, string service)
-    {
-        response.Headers["X-Fake-Service"] = service;
+        app.MapGet(
+            "/api/v1/notifications/internal/status",
+            () => Results.Ok(new
+            {
+                service = "notifications",
+                endpoint = "notifications-internal-status"
+            }));
 
-        return Results.NoContent();
+        app.MapGet(
+            "/api/v1/notifications/swagger",
+            () => Results.Ok("Fake Notifications Swagger"));
     }
 }
