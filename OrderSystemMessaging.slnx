@@ -27,6 +27,7 @@
     <Project Path="src/OrdersService/OrdersService.Infrastructure/OrdersService.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/ApiGateway.IntegrationTests/ApiGateway.IntegrationTests.csproj" />
     <Project Path="tests/InventoryService.Api.PostgresIntegrationTests/InventoryService.Api.PostgresIntegrationTests.csproj" />
     <Project Path="tests/InventoryService.Application.UnitTests/InventoryService.Application.UnitTests.csproj" />
     <Project Path="tests/InventoryService.Domain.UnitTests/InventoryService.Domain.UnitTests.csproj" />
