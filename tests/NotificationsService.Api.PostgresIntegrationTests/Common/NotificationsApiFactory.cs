@@ -85,7 +85,7 @@ public sealed class NotificationsApiFactory : WebApplicationFactory<ApiAssemblyM
             """);
     }
 
-    public HttpClient CreateAuthenticatedClient()
+    public HttpClient CreateAuthenticatedClient(params string[] roles)
     {
         var client = CreateClient();
 
@@ -93,12 +93,34 @@ public sealed class NotificationsApiFactory : WebApplicationFactory<ApiAssemblyM
             TestAuthenticationHandler.HeaderName,
             TestAuthenticationHandler.HeaderValue);
 
+        if (roles.Length > 0)
+        {
+            client.DefaultRequestHeaders.Add(
+                TestAuthenticationHandler.RolesHeaderName,
+                string.Join(',', roles));
+        }
+
         return client;
     }
 
     public HttpClient CreateUnauthenticatedClient()
     {
         return CreateClient();
+    }
+
+    public HttpClient CreateCustomerClient()
+    {
+        return CreateAuthenticatedClient("customer");
+    }
+
+    public HttpClient CreateSupportClient()
+    {
+        return CreateAuthenticatedClient("support");
+    }
+
+    public HttpClient CreateAdminClient()
+    {
+        return CreateAuthenticatedClient("admin");
     }
     public new async Task DisposeAsync()
     {

@@ -12,6 +12,7 @@ public sealed class TestAuthenticationHandler
     public const string AuthenticationScheme = "Test";
     public const string HeaderName = "X-Test-Auth";
     public const string HeaderValue = "true";
+    public const string RolesHeaderName = "X-Test-Roles";
 
     public TestAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -29,20 +30,20 @@ public sealed class TestAuthenticationHandler
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var claims = new[]
+        var roles = GetRolesFromRequest();
+
+        var claims = new List<Claim>
         {
-            new Claim(ClaimTypes.NameIdentifier, "integration-test-user"),
-            new Claim(ClaimTypes.Name, "integration-test-user"),
-            new Claim("preferred_username", "integration-test-user"),
-
-            new Claim(ClaimTypes.Role, "customer"),
-            new Claim(ClaimTypes.Role, "support"),
-            new Claim(ClaimTypes.Role, "admin"),
-
-            new Claim("roles", "customer"),
-            new Claim("roles", "support"),
-            new Claim("roles", "admin")
+            new(ClaimTypes.NameIdentifier, "integration-test-user"),
+            new(ClaimTypes.Name, "integration-test-user"),
+            new("preferred_username", "integration-test-user")
         };
+
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+            claims.Add(new Claim("roles", role));
+        }
 
         var identity = new ClaimsIdentity(
             claims,
@@ -57,5 +58,24 @@ public sealed class TestAuthenticationHandler
             AuthenticationScheme);
 
         return Task.FromResult(AuthenticateResult.Success(ticket));
+    }
+
+    private IReadOnlyCollection<string> GetRolesFromRequest()
+    {
+        if (!Request.Headers.TryGetValue(RolesHeaderName, out var roleHeaderValues))
+        {
+            return ["customer", "support", "admin"];
+        }
+
+        var roles = roleHeaderValues
+            .SelectMany(value => value?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                ?? [])
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return roles.Length > 0
+            ? roles
+            : ["customer", "support", "admin"];
     }
 }
