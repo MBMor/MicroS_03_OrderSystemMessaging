@@ -10,6 +10,8 @@ public sealed class TestAuthenticationHandler
     : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     public const string AuthenticationScheme = "Test";
+    public const string HeaderName = "X-Test-Auth";
+    public const string HeaderValue = "true";
 
     public TestAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -21,6 +23,12 @@ public sealed class TestAuthenticationHandler
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        if (!Request.Headers.TryGetValue(HeaderName, out var headerValues) ||
+            !headerValues.Any(value => string.Equals(value, HeaderValue, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, "integration-test-user"),

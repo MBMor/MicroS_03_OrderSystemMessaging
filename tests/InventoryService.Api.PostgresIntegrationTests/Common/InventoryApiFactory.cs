@@ -62,7 +62,7 @@ public sealed class InventoryApiFactory : WebApplicationFactory<ApiAssemblyMarke
 
         SetEnvironmentVariables();
 
-        HttpClient = CreateClient();
+        HttpClient = CreateAuthenticatedClient();
 
         using var scope = Services.CreateScope();
 
@@ -89,6 +89,21 @@ public sealed class InventoryApiFactory : WebApplicationFactory<ApiAssemblyMarke
             """);
     }
 
+    public HttpClient CreateAuthenticatedClient()
+    {
+        var client = CreateClient();
+
+        client.DefaultRequestHeaders.Add(
+            TestAuthenticationHandler.HeaderName,
+            TestAuthenticationHandler.HeaderValue);
+
+        return client;
+    }
+
+    public HttpClient CreateUnauthenticatedClient()
+    {
+        return CreateClient();
+    }
     public new async Task DisposeAsync()
     {
         HttpClient.Dispose();

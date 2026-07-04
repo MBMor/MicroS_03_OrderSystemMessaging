@@ -61,7 +61,7 @@ public sealed class OrdersApiFactory : WebApplicationFactory<ApiAssemblyMarker>,
 
         SetEnvironmentVariables();
 
-        HttpClient = CreateClient();
+        HttpClient = CreateAuthenticatedClient();
 
         using var scope = Services.CreateScope();
 
@@ -85,6 +85,21 @@ public sealed class OrdersApiFactory : WebApplicationFactory<ApiAssemblyMarker>,
                 "Orders"
             restart identity cascade;
             """);
+    }
+    public HttpClient CreateAuthenticatedClient()
+    {
+        var client = CreateClient();
+
+        client.DefaultRequestHeaders.Add(
+            TestAuthenticationHandler.HeaderName,
+            TestAuthenticationHandler.HeaderValue);
+
+        return client;
+    }
+
+    public HttpClient CreateUnauthenticatedClient()
+    {
+        return CreateClient();
     }
 
     public new async Task DisposeAsync()
