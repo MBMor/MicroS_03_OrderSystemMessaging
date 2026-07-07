@@ -10,6 +10,7 @@ using OrdersService.Domain.Orders;
 using OrdersService.Infrastructure.Messaging;
 using OrdersService.Infrastructure.Persistence;
 using OrdersService.Infrastructure.StockReservations;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace OrdersService.Application.UnitTests.StockReservations;
 
@@ -296,7 +297,8 @@ public sealed class OrderStockReservationResultApplicationServiceTests
             dbContext,
             clock,
             stockReservedValidator,
-            stockReservationFailedValidator);
+            stockReservationFailedValidator,
+            NullLogger<OrderStockReservationResultApplicationService>.Instance);
     }
 
     private static OrdersDbContext CreateDbContext()

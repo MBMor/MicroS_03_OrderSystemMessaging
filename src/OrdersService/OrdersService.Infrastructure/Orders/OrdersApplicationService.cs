@@ -1,5 +1,7 @@
-﻿using FluentValidation;
+﻿using System.Text.Json;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using OrdersService.Application.Common.Abstractions;
 using OrdersService.Application.Common.Pagination;
 using OrdersService.Application.Orders.Abstractions;
@@ -9,7 +11,6 @@ using OrdersService.Infrastructure.Messaging;
 using OrdersService.Infrastructure.Outbox;
 using OrdersService.Infrastructure.Persistence;
 using OrderSystem.Contracts.IntegrationEvents;
-using System.Text.Json;
 
 namespace OrdersService.Infrastructure.Orders;
 
@@ -17,7 +18,8 @@ public sealed class OrdersApplicationService(
     OrdersDbContext dbContext,
     IClock clock,
     IValidator<CreateOrderRequest> createOrderRequestValidator,
-    IValidator<ListOrdersRequest> listOrdersRequestValidator) : IOrdersService
+    IValidator<ListOrdersRequest> listOrdersRequestValidator,
+    ILogger<OrdersApplicationService> logger) : IOrdersService
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new()
     {
@@ -29,6 +31,7 @@ public sealed class OrdersApplicationService(
     private readonly IClock _clock = clock;
     private readonly IValidator<CreateOrderRequest> _createOrderRequestValidator = createOrderRequestValidator;
     private readonly IValidator<ListOrdersRequest> _listOrdersRequestValidator = listOrdersRequestValidator;
+    private readonly ILogger<OrdersApplicationService> _logger = logger;
 
     public async Task<OrderResponse> CreateAsync(
         CreateOrderRequest request,
@@ -78,14 +81,31 @@ public sealed class OrdersApplicationService(
             payload: payload,
             occurredAtUtc: orderCreatedEvent.OccurredAtUtc);
 
+        _logger.LogInformation(
+            "Creating order {OrderId} with {ItemCount} items",
+            order.Id,
+            order.Items.Count);
+
+        _logger.LogInformation(
+            "OrderCreated outbox message {OutboxMessageId} prepared for order {OrderId}. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}",
+            outboxMessage.Id,
+            order.Id,
+            outboxMessage.EventId,
+            outboxMessage.EventType,
+            outboxMessage.RoutingKey);
+
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         _dbContext.Orders.Add(order);
         _dbContext.OutboxMessages.Add(outboxMessage);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-
         await transaction.CommitAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Order {OrderId} created and outbox message {OutboxMessageId} stored",
+            order.Id,
+            outboxMessage.Id);
 
         return MapToResponse(order);
     }
@@ -185,9 +205,9 @@ public sealed class OrdersApplicationService(
     }
 
     private static IQueryable<Order> ApplySorting(
-    IQueryable<Order> query,
-    string sortBy,
-    string sortDirection)
+        IQueryable<Order> query,
+        string sortBy,
+        string sortDirection)
     {
         var descending = string.Equals(
             sortDirection,

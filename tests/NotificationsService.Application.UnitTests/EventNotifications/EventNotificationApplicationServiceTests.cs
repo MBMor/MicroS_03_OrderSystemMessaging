@@ -9,6 +9,7 @@ using NotificationsService.Infrastructure.EventNotifications;
 using NotificationsService.Infrastructure.Messaging;
 using NotificationsService.Infrastructure.Persistence;
 using OrderSystem.Contracts.IntegrationEvents;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace NotificationsService.Application.UnitTests.EventNotifications;
 
@@ -318,7 +319,8 @@ public sealed class EventNotificationApplicationServiceTests
             clock,
             orderCreatedValidator,
             stockReservedValidator,
-            stockReservationFailedValidator);
+            stockReservationFailedValidator,
+            NullLogger<EventNotificationApplicationService>.Instance);
     }
 
     private static NotificationsDbContext CreateDbContext()

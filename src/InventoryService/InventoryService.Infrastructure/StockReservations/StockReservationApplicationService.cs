@@ -11,6 +11,7 @@ using InventoryService.Infrastructure.Messaging;
 using InventoryService.Infrastructure.Outbox;
 using InventoryService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using OrderSystem.Contracts.IntegrationEvents;
 
 namespace InventoryService.Infrastructure.StockReservations;
@@ -18,7 +19,8 @@ namespace InventoryService.Infrastructure.StockReservations;
 public sealed class StockReservationApplicationService(
     InventoryDbContext dbContext,
     IClock clock,
-    IValidator<ReserveStockForOrderCommand> validator) : IStockReservationService
+    IValidator<ReserveStockForOrderCommand> validator,
+    ILogger<StockReservationApplicationService> logger) : IStockReservationService
 {
     private const string InsufficientStockReason = "Insufficient stock for one or more order items.";
 
@@ -31,6 +33,7 @@ public sealed class StockReservationApplicationService(
     private readonly InventoryDbContext _dbContext = dbContext;
     private readonly IClock _clock = clock;
     private readonly IValidator<ReserveStockForOrderCommand> _validator = validator;
+    private readonly ILogger<StockReservationApplicationService> _logger = logger;
 
     public async Task HandleOrderCreatedAsync(
         ReserveStockForOrderCommand command,
@@ -47,6 +50,13 @@ public sealed class StockReservationApplicationService(
             throw new ValidationException(validationResult.Errors);
         }
 
+        _logger.LogInformation(
+            "Stock reservation processing started for order {OrderId}. MessageId: {MessageId}, EventType: {EventType}, ItemCount: {ItemCount}",
+            command.OrderId,
+            command.MessageId,
+            command.EventType,
+            command.Items?.Count ?? 0);
+
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(
             IsolationLevel.Serializable,
             cancellationToken);
@@ -61,6 +71,12 @@ public sealed class StockReservationApplicationService(
 
         if (alreadyProcessed)
         {
+            _logger.LogInformation(
+                "Duplicate order created message {MessageId} skipped by {ConsumerName}",
+                command.MessageId,
+                ConsumerNames.InventoryOrderCreatedConsumer);
+
+            await transaction.CommitAsync(cancellationToken);
             return;
         }
 
@@ -72,11 +88,15 @@ public sealed class StockReservationApplicationService(
 
         if (existingReservation)
         {
+            _logger.LogInformation(
+                "Stock reservation already exists for order {OrderId}. Message {MessageId} will be marked as processed",
+                command.OrderId,
+                command.MessageId);
+
             AddProcessedMessage(command);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-
             return;
         }
 
@@ -127,6 +147,11 @@ public sealed class StockReservationApplicationService(
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Stock reservation processing completed for order {OrderId}. MessageId: {MessageId}",
+            command.OrderId,
+            command.MessageId);
     }
 
     private async Task CreateSuccessfulReservationAsync(
@@ -182,6 +207,15 @@ public sealed class StockReservationApplicationService(
             integrationEvent,
             RabbitMqRoutingKeys.StockReserved);
 
+        _logger.LogInformation(
+            "Stock reservation succeeded for order {OrderId}. ReservationId: {ReservationId}, ReservedItemCount: {ReservedItemCount}, OutboxMessageId: {OutboxMessageId}, EventId: {EventId}, RoutingKey: {RoutingKey}",
+            command.OrderId,
+            reservation.Id,
+            requestedItems.Count,
+            outboxMessage.Id,
+            outboxMessage.EventId,
+            outboxMessage.RoutingKey);
+
         _dbContext.StockReservations.Add(reservation);
         _dbContext.OutboxMessages.Add(outboxMessage);
 
@@ -227,6 +261,15 @@ public sealed class StockReservationApplicationService(
         var outboxMessage = CreateOutboxMessage(
             integrationEvent,
             RabbitMqRoutingKeys.StockReservationFailed);
+
+        _logger.LogWarning(
+            "Stock reservation failed for order {OrderId}. ReservationId: {ReservationId}, FailedItemCount: {FailedItemCount}, OutboxMessageId: {OutboxMessageId}, EventId: {EventId}, RoutingKey: {RoutingKey}",
+            command.OrderId,
+            reservation.Id,
+            failedItems.Count,
+            outboxMessage.Id,
+            outboxMessage.EventId,
+            outboxMessage.RoutingKey);
 
         _dbContext.StockReservations.Add(reservation);
         _dbContext.OutboxMessages.Add(outboxMessage);

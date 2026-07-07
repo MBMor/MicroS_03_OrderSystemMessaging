@@ -11,6 +11,7 @@ using InventoryService.Infrastructure.StockReservations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using OrderSystem.Contracts.IntegrationEvents;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace InventoryService.Application.UnitTests.StockReservations;
 
@@ -261,7 +262,8 @@ public sealed class StockReservationApplicationServiceTests
         return new StockReservationApplicationService(
             dbContext,
             clock,
-            validator);
+            validator,
+            NullLogger<StockReservationApplicationService>.Instance);
     }
 
     private static InventoryDbContext CreateDbContext()
