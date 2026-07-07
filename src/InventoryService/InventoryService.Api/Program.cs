@@ -14,8 +14,11 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using InventoryService.Api.Security;
 using Observability.Shared.Correlation;
+using Observability.Shared.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.UseStructuredJsonConsole();
 
 builder.Services.AddControllers();
 

@@ -7,8 +7,11 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Observability.Shared.Correlation;
+using Observability.Shared.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.UseStructuredJsonConsole();
 
 builder.Services.AddControllers();
 
