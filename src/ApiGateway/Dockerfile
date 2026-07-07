@@ -20,6 +20,7 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 
 COPY ["src/ApiGateway/ApiGateway.csproj", "src/ApiGateway/"]
+COPY ["src/Observability.Shared/Observability.Shared.csproj", "src/Observability.Shared/"]
 
 RUN dotnet restore "src/ApiGateway/ApiGateway.csproj"
 

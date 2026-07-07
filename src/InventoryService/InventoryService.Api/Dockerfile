@@ -20,6 +20,7 @@ COPY ["src/InventoryService/InventoryService.Domain/InventoryService.Domain.cspr
 COPY ["src/InventoryService/InventoryService.Application/InventoryService.Application.csproj", "src/InventoryService/InventoryService.Application/"]
 COPY ["src/InventoryService/InventoryService.Infrastructure/InventoryService.Infrastructure.csproj", "src/InventoryService/InventoryService.Infrastructure/"]
 COPY ["src/InventoryService/InventoryService.Api/InventoryService.Api.csproj", "src/InventoryService/InventoryService.Api/"]
+COPY ["src/Observability.Shared/Observability.Shared.csproj", "src/Observability.Shared/"]
 
 RUN dotnet restore "src/InventoryService/InventoryService.Api/InventoryService.Api.csproj"
 

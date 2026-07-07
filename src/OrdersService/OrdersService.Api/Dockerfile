@@ -20,6 +20,7 @@ COPY ["src/OrdersService/OrdersService.Domain/OrdersService.Domain.csproj", "src
 COPY ["src/OrdersService/OrdersService.Application/OrdersService.Application.csproj", "src/OrdersService/OrdersService.Application/"]
 COPY ["src/OrdersService/OrdersService.Infrastructure/OrdersService.Infrastructure.csproj", "src/OrdersService/OrdersService.Infrastructure/"]
 COPY ["src/OrdersService/OrdersService.Api/OrdersService.Api.csproj", "src/OrdersService/OrdersService.Api/"]
+COPY ["src/Observability.Shared/Observability.Shared.csproj", "src/Observability.Shared/"]
 
 RUN dotnet restore "src/OrdersService/OrdersService.Api/OrdersService.Api.csproj"
 

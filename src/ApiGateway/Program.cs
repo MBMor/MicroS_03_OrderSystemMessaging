@@ -6,10 +6,13 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
+using Observability.Shared.Correlation;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
+builder.Services.AddCorrelationId();
 
 builder.Services.AddHttpClient("health-checks");
 
@@ -180,6 +183,8 @@ builder.Services
     .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
 var app = builder.Build();
+
+app.UseCorrelationId();
 
 app.MapHealthChecks("/health", new HealthCheckOptions
 {

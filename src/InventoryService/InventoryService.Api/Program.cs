@@ -13,10 +13,13 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using InventoryService.Api.Security;
+using Observability.Shared.Correlation;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+
+builder.Services.AddCorrelationId();
 
 builder.Services.AddApiVersioning(options =>
 {
@@ -103,6 +106,8 @@ builder.Services
         tags: ["ready", "messaging", "rabbitmq"]);
 
 var app = builder.Build();
+
+app.UseCorrelationId();
 
 if (app.Environment.IsDevelopment())
 {

@@ -20,6 +20,7 @@ COPY ["src/NotificationsService/NotificationsService.Domain/NotificationsService
 COPY ["src/NotificationsService/NotificationsService.Application/NotificationsService.Application.csproj", "src/NotificationsService/NotificationsService.Application/"]
 COPY ["src/NotificationsService/NotificationsService.Infrastructure/NotificationsService.Infrastructure.csproj", "src/NotificationsService/NotificationsService.Infrastructure/"]
 COPY ["src/NotificationsService/NotificationsService.Api/NotificationsService.Api.csproj", "src/NotificationsService/NotificationsService.Api/"]
+COPY ["src/Observability.Shared/Observability.Shared.csproj", "src/Observability.Shared/"]
 
 RUN dotnet restore "src/NotificationsService/NotificationsService.Api/NotificationsService.Api.csproj"
 
