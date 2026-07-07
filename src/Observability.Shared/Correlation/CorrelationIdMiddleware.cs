@@ -1,11 +1,15 @@
 ﻿using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 
 namespace Observability.Shared.Correlation;
 
-public sealed class CorrelationIdMiddleware(RequestDelegate next)
+public sealed class CorrelationIdMiddleware(
+    RequestDelegate next,
+    ILogger<CorrelationIdMiddleware> logger)
 {
     private readonly RequestDelegate _next = next;
+    private readonly ILogger<CorrelationIdMiddleware> _logger = logger;
 
     public async Task InvokeAsync(
         HttpContext context,
@@ -32,6 +36,11 @@ public sealed class CorrelationIdMiddleware(RequestDelegate next)
 
             return Task.CompletedTask;
         }, (context, correlationId));
+
+        using var scope = _logger.BeginScope(new Dictionary<string, object>
+        {
+            [CorrelationIdConstants.LogScopeKey] = correlationId
+        });
 
         await _next(context);
     }
