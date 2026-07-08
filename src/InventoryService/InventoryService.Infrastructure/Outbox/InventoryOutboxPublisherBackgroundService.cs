@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Observability.Shared.Messaging;
 using RabbitMQ.Client;
 
 namespace InventoryService.Infrastructure.Outbox;
@@ -122,20 +123,25 @@ public sealed class InventoryOutboxPublisherBackgroundService(
         OutboxMessage outboxMessage,
         CancellationToken cancellationToken)
     {
+        var correlationId = RabbitMqMessageHeaders.GetCorrelationIdFromJsonPayload(
+            outboxMessage.Payload);
+
         try
         {
             _logger.LogInformation(
-                "Publishing Inventory outbox message {OutboxMessageId}. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, ExchangeName: {ExchangeName}",
+                "Publishing Inventory outbox message {OutboxMessageId}. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, ExchangeName: {ExchangeName}, CorrelationId: {CorrelationId}",
                 outboxMessage.Id,
                 outboxMessage.EventId,
                 outboxMessage.EventType,
                 outboxMessage.RoutingKey,
                 outboxMessage.RetryCount,
-                _rabbitMqOptions.ExchangeName);
+                _rabbitMqOptions.ExchangeName,
+                correlationId);
 
             await PublishToRabbitMqAsync(
                 channel,
                 outboxMessage,
+                correlationId,
                 cancellationToken);
 
             outboxMessage.MarkPublished(clock.UtcNow);
@@ -143,13 +149,14 @@ public sealed class InventoryOutboxPublisherBackgroundService(
             await dbContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
-                "Inventory outbox message {OutboxMessageId} published. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, Status: {Status}",
+                "Inventory outbox message {OutboxMessageId} published. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, Status: {Status}, CorrelationId: {CorrelationId}",
                 outboxMessage.Id,
                 outboxMessage.EventId,
                 outboxMessage.EventType,
                 outboxMessage.RoutingKey,
                 outboxMessage.RetryCount,
-                outboxMessage.Status);
+                outboxMessage.Status,
+                correlationId);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -167,30 +174,47 @@ public sealed class InventoryOutboxPublisherBackgroundService(
             _logger.Log(
                 logLevel,
                 exception,
-                "Publishing Inventory outbox message {OutboxMessageId} failed. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, MaxRetryCount: {MaxRetryCount}, Status: {Status}",
+                "Publishing Inventory outbox message {OutboxMessageId} failed. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, MaxRetryCount: {MaxRetryCount}, Status: {Status}, CorrelationId: {CorrelationId}",
                 outboxMessage.Id,
                 outboxMessage.EventId,
                 outboxMessage.EventType,
                 outboxMessage.RoutingKey,
                 outboxMessage.RetryCount,
                 _outboxPublisherOptions.MaxRetryCount,
-                outboxMessage.Status);
+                outboxMessage.Status,
+                correlationId);
         }
     }
 
     private async Task PublishToRabbitMqAsync(
         IChannel channel,
         OutboxMessage outboxMessage,
+        string? correlationId,
         CancellationToken cancellationToken)
     {
         var body = Encoding.UTF8.GetBytes(outboxMessage.Payload);
+
+        var headers = new Dictionary<string, object?>();
+
+        RabbitMqMessageHeaders.SetCorrelationId(
+            headers,
+            correlationId);
+
+        if (correlationId is null)
+        {
+            _logger.LogWarning(
+                "Inventory outbox message {OutboxMessageId} does not contain a valid correlation id in payload. RabbitMQ header {CorrelationIdHeaderName} will not be set.",
+                outboxMessage.Id,
+                RabbitMqMessageHeaders.CorrelationIdHeaderName);
+        }
 
         var properties = new BasicProperties
         {
             Persistent = true,
             ContentType = "application/json",
             MessageId = outboxMessage.EventId.ToString(),
-            Type = outboxMessage.EventType
+            Type = outboxMessage.EventType,
+            Headers = headers
         };
 
         await channel.BasicPublishAsync(
