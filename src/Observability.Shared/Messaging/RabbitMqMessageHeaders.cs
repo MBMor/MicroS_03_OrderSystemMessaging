@@ -52,6 +52,15 @@ public static class RabbitMqMessageHeaders
             ?? CorrelationIdGenerator.Create();
     }
 
+    public static string ResolveCorrelationId(
+    IDictionary<string, object?>? headers,
+    string? payloadCorrelationId)
+    {
+        return GetCorrelationId(headers)
+            ?? CorrelationIdValidator.Normalize(payloadCorrelationId)
+            ?? CorrelationIdGenerator.Create();
+    }
+
     public static string? GetCorrelationIdFromJsonPayload(string? payload)
     {
         if (string.IsNullOrWhiteSpace(payload))

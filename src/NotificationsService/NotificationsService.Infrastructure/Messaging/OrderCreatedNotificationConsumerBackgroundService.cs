@@ -9,6 +9,8 @@ using NotificationsService.Application.EventNotifications.Contracts;
 using OrderSystem.Contracts.IntegrationEvents;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using Observability.Shared.Correlation;
+using Observability.Shared.Messaging;
 
 namespace NotificationsService.Infrastructure.Messaging;
 
@@ -104,17 +106,34 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
         BasicDeliverEventArgs eventArgs,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "OrderCreated notification message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}",
-            eventArgs.DeliveryTag,
-            eventArgs.BasicProperties.MessageId,
-            eventArgs.BasicProperties.Type,
-            eventArgs.RoutingKey,
-            eventArgs.Redelivered);
+        var fallbackCorrelationId = RabbitMqMessageHeaders.GetCorrelationIdOrCreate(
+            eventArgs.BasicProperties.Headers);
 
         try
         {
             var command = CreateCommand(eventArgs);
+
+            var correlationId = RabbitMqMessageHeaders.ResolveCorrelationId(
+                eventArgs.BasicProperties.Headers,
+                command.CorrelationId);
+
+            command = command with
+            {
+                CorrelationId = correlationId
+            };
+
+            using var correlationScope = CorrelationIdLogScope.Begin(
+                _logger,
+                correlationId);
+
+            _logger.LogInformation(
+                "OrderCreated notification message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}",
+                eventArgs.DeliveryTag,
+                eventArgs.BasicProperties.MessageId,
+                eventArgs.BasicProperties.Type,
+                eventArgs.RoutingKey,
+                eventArgs.Redelivered,
+                correlationId);
 
             _logger.LogInformation(
                 "OrderCreated notification message {MessageId} deserialized. EventType: {EventType}, CorrelationId: {CorrelationId}, OrderId: {OrderId}, DeliveryTag: {DeliveryTag}",
@@ -126,10 +145,17 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
 
             await using var scope = _serviceScopeFactory.CreateAsyncScope();
 
+            var correlationIdAccessor = scope.ServiceProvider
+                .GetRequiredService<ICorrelationIdAccessor>();
+
+            correlationIdAccessor.CorrelationId = correlationId;
+
             var service = scope.ServiceProvider
                 .GetRequiredService<IEventNotificationService>();
 
-            await service.HandleOrderCreatedAsync(command, cancellationToken);
+            await service.HandleOrderCreatedAsync(
+                command,
+                cancellationToken);
 
             await channel.BasicAckAsync(
                 deliveryTag: eventArgs.DeliveryTag,
@@ -137,12 +163,13 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation(
-                "OrderCreated notification message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}",
+                "OrderCreated notification message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}, CorrelationId: {CorrelationId}",
                 command.MessageId,
                 command.OrderId,
                 eventArgs.DeliveryTag,
                 command.EventType,
-                _topologyOptions.OrderCreatedQueueName);
+                _topologyOptions.OrderCreatedQueueName,
+                correlationId);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -150,15 +177,20 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
         }
         catch (Exception exception)
         {
+            using var correlationScope = CorrelationIdLogScope.Begin(
+                _logger,
+                fallbackCorrelationId);
+
             _logger.LogError(
                 exception,
-                "OrderCreated notification message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}",
+                "OrderCreated notification message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}",
                 eventArgs.DeliveryTag,
                 eventArgs.BasicProperties.MessageId,
                 eventArgs.BasicProperties.Type,
                 eventArgs.RoutingKey,
                 _topologyOptions.OrderCreatedQueueName,
-                eventArgs.Redelivered);
+                eventArgs.Redelivered,
+                fallbackCorrelationId);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,

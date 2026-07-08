@@ -9,6 +9,8 @@ using OrdersService.Application.StockReservations.Abstractions;
 using OrdersService.Application.StockReservations.Contracts;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using Observability.Shared.Correlation;
+using Observability.Shared.Messaging;
 
 namespace OrdersService.Infrastructure.Messaging;
 
@@ -116,17 +118,34 @@ public sealed class StockReservedConsumerBackgroundService(
         BasicDeliverEventArgs eventArgs,
         CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "StockReserved message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}",
-            eventArgs.DeliveryTag,
-            eventArgs.BasicProperties.MessageId,
-            eventArgs.BasicProperties.Type,
-            eventArgs.RoutingKey,
-            eventArgs.Redelivered);
+        var fallbackCorrelationId = RabbitMqMessageHeaders.GetCorrelationIdOrCreate(
+            eventArgs.BasicProperties.Headers);
 
         try
         {
             var command = CreateCommand(eventArgs);
+
+            var correlationId = RabbitMqMessageHeaders.ResolveCorrelationId(
+                eventArgs.BasicProperties.Headers,
+                command.CorrelationId);
+
+            command = command with
+            {
+                CorrelationId = correlationId
+            };
+
+            using var correlationScope = CorrelationIdLogScope.Begin(
+                _logger,
+                correlationId);
+
+            _logger.LogInformation(
+                "StockReserved message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}",
+                eventArgs.DeliveryTag,
+                eventArgs.BasicProperties.MessageId,
+                eventArgs.BasicProperties.Type,
+                eventArgs.RoutingKey,
+                eventArgs.Redelivered,
+                correlationId);
 
             _logger.LogInformation(
                 "StockReserved message {MessageId} deserialized. EventType: {EventType}, CorrelationId: {CorrelationId}, OrderId: {OrderId}, DeliveryTag: {DeliveryTag}",
@@ -137,6 +156,11 @@ public sealed class StockReservedConsumerBackgroundService(
                 eventArgs.DeliveryTag);
 
             await using var scope = _serviceScopeFactory.CreateAsyncScope();
+
+            var correlationIdAccessor = scope.ServiceProvider
+                .GetRequiredService<ICorrelationIdAccessor>();
+
+            correlationIdAccessor.CorrelationId = correlationId;
 
             var service = scope.ServiceProvider
                 .GetRequiredService<IOrderStockReservationResultService>();
@@ -151,12 +175,13 @@ public sealed class StockReservedConsumerBackgroundService(
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation(
-                "StockReserved message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}",
+                "StockReserved message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}, CorrelationId: {CorrelationId}",
                 command.MessageId,
                 command.OrderId,
                 eventArgs.DeliveryTag,
                 command.EventType,
-                _topologyOptions.StockReservedQueueName);
+                _topologyOptions.StockReservedQueueName,
+                correlationId);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -164,15 +189,20 @@ public sealed class StockReservedConsumerBackgroundService(
         }
         catch (Exception exception)
         {
+            using var correlationScope = CorrelationIdLogScope.Begin(
+                _logger,
+                fallbackCorrelationId);
+
             _logger.LogError(
                 exception,
-                "StockReserved message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}",
+                "StockReserved message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}",
                 eventArgs.DeliveryTag,
                 eventArgs.BasicProperties.MessageId,
                 eventArgs.BasicProperties.Type,
                 eventArgs.RoutingKey,
                 _topologyOptions.StockReservedQueueName,
-                eventArgs.Redelivered);
+                eventArgs.Redelivered,
+                fallbackCorrelationId);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,

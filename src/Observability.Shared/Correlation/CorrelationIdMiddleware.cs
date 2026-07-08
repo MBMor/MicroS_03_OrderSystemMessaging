@@ -8,8 +8,6 @@ public sealed class CorrelationIdMiddleware(
     RequestDelegate next,
     ILogger<CorrelationIdMiddleware> logger)
 {
-    private static readonly Func<ILogger, string, IDisposable?> CorrelationIdScope =
-        LoggerMessage.DefineScope<string>("CorrelationId:{CorrelationId}");
 
     private readonly RequestDelegate _next = next;
     private readonly ILogger<CorrelationIdMiddleware> _logger = logger;
@@ -40,7 +38,7 @@ public sealed class CorrelationIdMiddleware(
             return Task.CompletedTask;
         }, (context, correlationId));
 
-        using var scope = CorrelationIdScope(
+        using var scope = CorrelationIdLogScope.Begin(
             _logger,
             correlationId);
 
