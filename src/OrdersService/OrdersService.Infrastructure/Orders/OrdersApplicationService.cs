@@ -2,6 +2,7 @@
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Observability.Shared.Correlation;
 using OrdersService.Application.Common.Abstractions;
 using OrdersService.Application.Common.Pagination;
 using OrdersService.Application.Orders.Abstractions;
@@ -19,7 +20,8 @@ public sealed class OrdersApplicationService(
     IClock clock,
     IValidator<CreateOrderRequest> createOrderRequestValidator,
     IValidator<ListOrdersRequest> listOrdersRequestValidator,
-    ILogger<OrdersApplicationService> logger) : IOrdersService
+    ILogger<OrdersApplicationService> logger,
+    ICorrelationIdAccessor correlationIdAccessor) : IOrdersService
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new()
     {
@@ -32,6 +34,7 @@ public sealed class OrdersApplicationService(
     private readonly IValidator<CreateOrderRequest> _createOrderRequestValidator = createOrderRequestValidator;
     private readonly IValidator<ListOrdersRequest> _listOrdersRequestValidator = listOrdersRequestValidator;
     private readonly ILogger<OrdersApplicationService> _logger = logger;
+    private readonly ICorrelationIdAccessor _correlationIdAccessor = correlationIdAccessor;
 
     public async Task<OrderResponse> CreateAsync(
         CreateOrderRequest request,
@@ -67,7 +70,13 @@ public sealed class OrdersApplicationService(
             items: orderItems,
             createdAtUtc: now);
 
-        var orderCreatedEvent = CreateOrderCreatedEvent(order, now);
+        var correlationId = _correlationIdAccessor.CorrelationId
+            ?? CorrelationIdGenerator.Create();
+
+        var orderCreatedEvent = CreateOrderCreatedEvent(
+            order,
+            now,
+            correlationId);
 
         var payload = JsonSerializer.Serialize(
             orderCreatedEvent,
@@ -87,12 +96,13 @@ public sealed class OrdersApplicationService(
             order.Items.Count);
 
         _logger.LogInformation(
-            "OrderCreated outbox message {OutboxMessageId} prepared for order {OrderId}. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}",
+            "OrderCreated outbox message {OutboxMessageId} prepared for order {OrderId}. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, CorrelationId: {CorrelationId}",
             outboxMessage.Id,
             order.Id,
             outboxMessage.EventId,
             outboxMessage.EventType,
-            outboxMessage.RoutingKey);
+            outboxMessage.RoutingKey,
+            correlationId);
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -183,13 +193,16 @@ public sealed class OrdersApplicationService(
             totalCount);
     }
 
-    private static OrderCreated CreateOrderCreatedEvent(Order order, DateTime occurredAtUtc)
+    private static OrderCreated CreateOrderCreatedEvent(
+        Order order,
+        DateTime occurredAtUtc,
+        string correlationId)
     {
         return new OrderCreated
         {
             EventId = Guid.NewGuid(),
             OccurredAtUtc = occurredAtUtc,
-            CorrelationId = Guid.NewGuid(),
+            CorrelationId = correlationId,
             OrderId = order.Id,
             CustomerName = order.CustomerName,
             CustomerEmail = order.CustomerEmail,
@@ -237,6 +250,7 @@ public sealed class OrdersApplicationService(
                 : query.OrderBy(order => order.CreatedAtUtc)
         };
     }
+
     private static OrderResponse MapToResponse(Order order)
     {
         return new OrderResponse

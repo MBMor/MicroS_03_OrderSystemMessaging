@@ -6,7 +6,7 @@ public sealed record CreateOrderCreatedNotificationCommand
 
     public string? EventType { get; init; }
 
-    public Guid CorrelationId { get; init; }
+    public string? CorrelationId { get; init; }
 
     public Guid OrderId { get; init; }
 

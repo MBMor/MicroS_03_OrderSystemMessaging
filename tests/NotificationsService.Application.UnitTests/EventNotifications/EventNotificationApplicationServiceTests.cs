@@ -234,7 +234,7 @@ public sealed class EventNotificationApplicationServiceTests
         {
             MessageId = Guid.Empty,
             EventType = "",
-            CorrelationId = Guid.Empty,
+            CorrelationId = null,
             OrderId = Guid.Empty,
             CustomerName = "",
             CustomerEmail = "not-an-email"
@@ -261,7 +261,7 @@ public sealed class EventNotificationApplicationServiceTests
         {
             MessageId = Guid.Empty,
             EventType = "",
-            CorrelationId = Guid.Empty,
+            CorrelationId = null,
             OrderId = Guid.Empty,
             CustomerName = "",
             CustomerEmail = "not-an-email"
@@ -288,7 +288,7 @@ public sealed class EventNotificationApplicationServiceTests
         {
             MessageId = Guid.Empty,
             EventType = "",
-            CorrelationId = Guid.Empty,
+            CorrelationId = null,
             OrderId = Guid.Empty,
             CustomerName = "",
             CustomerEmail = "not-an-email",
@@ -342,7 +342,7 @@ public sealed class EventNotificationApplicationServiceTests
         {
             MessageId = Guid.NewGuid(),
             EventType = IntegrationEventTypes.OrderCreated,
-            CorrelationId = Guid.NewGuid(),
+            CorrelationId = Guid.NewGuid().ToString("N"),
             OrderId = Guid.NewGuid(),
             CustomerName = "John Doe",
             CustomerEmail = "john.doe@example.com"
@@ -355,7 +355,7 @@ public sealed class EventNotificationApplicationServiceTests
         {
             MessageId = Guid.NewGuid(),
             EventType = IntegrationEventTypes.StockReserved,
-            CorrelationId = Guid.NewGuid(),
+            CorrelationId = Guid.NewGuid().ToString("N"),
             OrderId = Guid.NewGuid(),
             CustomerName = "John Doe",
             CustomerEmail = "john.doe@example.com"
@@ -368,7 +368,7 @@ public sealed class EventNotificationApplicationServiceTests
         {
             MessageId = Guid.NewGuid(),
             EventType = IntegrationEventTypes.StockReservationFailed,
-            CorrelationId = Guid.NewGuid(),
+            CorrelationId = Guid.NewGuid().ToString("N"),
             OrderId = Guid.NewGuid(),
             CustomerName = "John Doe",
             CustomerEmail = "john.doe@example.com",

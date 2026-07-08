@@ -8,5 +8,5 @@ public interface IIntegrationEvent
 
     DateTime OccurredAtUtc { get; }
 
-    Guid CorrelationId { get; }
+    string CorrelationId { get; }
 }

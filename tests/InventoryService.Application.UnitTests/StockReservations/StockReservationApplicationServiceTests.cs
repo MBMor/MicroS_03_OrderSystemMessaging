@@ -235,7 +235,7 @@ public sealed class StockReservationApplicationServiceTests
         {
             MessageId = Guid.Empty,
             EventType = "",
-            CorrelationId = Guid.Empty,
+            CorrelationId = null,
             OrderId = Guid.Empty,
             CustomerName = "",
             CustomerEmail = "not-an-email",
@@ -301,7 +301,7 @@ public sealed class StockReservationApplicationServiceTests
         {
             MessageId = messageId ?? Guid.NewGuid(),
             EventType = IntegrationEventTypes.OrderCreated,
-            CorrelationId = Guid.NewGuid(),
+            CorrelationId = Guid.NewGuid().ToString("N"),
             OrderId = orderId ?? Guid.NewGuid(),
             CustomerName = "John Doe",
             CustomerEmail = "john.doe@example.com",

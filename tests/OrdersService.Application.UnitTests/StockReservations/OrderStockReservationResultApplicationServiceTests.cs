@@ -247,7 +247,7 @@ public sealed class OrderStockReservationResultApplicationServiceTests
         {
             MessageId = Guid.Empty,
             EventType = "",
-            CorrelationId = Guid.Empty,
+            CorrelationId = null,
             OrderId = Guid.Empty
         };
 
@@ -271,7 +271,7 @@ public sealed class OrderStockReservationResultApplicationServiceTests
         {
             MessageId = Guid.Empty,
             EventType = "",
-            CorrelationId = Guid.Empty,
+            CorrelationId = null,
             OrderId = Guid.Empty,
             Reason = ""
         };
@@ -341,7 +341,7 @@ public sealed class OrderStockReservationResultApplicationServiceTests
         {
             MessageId = messageId ?? Guid.NewGuid(),
             EventType = IntegrationEventTypes.StockReserved,
-            CorrelationId = Guid.NewGuid(),
+            CorrelationId = Guid.NewGuid().ToString("N"),
             OrderId = orderId
         };
     }
@@ -354,7 +354,7 @@ public sealed class OrderStockReservationResultApplicationServiceTests
         {
             MessageId = messageId ?? Guid.NewGuid(),
             EventType = IntegrationEventTypes.StockReservationFailed,
-            CorrelationId = Guid.NewGuid(),
+            CorrelationId = Guid.NewGuid().ToString("N"),
             OrderId = orderId,
             Reason = "Insufficient stock."
         };

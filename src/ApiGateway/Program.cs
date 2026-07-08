@@ -8,6 +8,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Observability.Shared.Correlation;
 using Observability.Shared.Logging;
+using Yarp.ReverseProxy.Transforms;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -183,7 +184,25 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services
     .AddReverseProxy()
-    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
+    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"))
+    .AddTransforms(transformBuilderContext =>
+    {
+        transformBuilderContext.AddRequestTransform(transformContext =>
+        {
+            var correlationIdAccessor = transformContext.HttpContext.RequestServices
+                .GetRequiredService<ICorrelationIdAccessor>();
+
+            if (!string.IsNullOrWhiteSpace(correlationIdAccessor.CorrelationId))
+            {
+                transformContext.ProxyRequest.Headers.Remove(CorrelationIdConstants.HeaderName);
+                transformContext.ProxyRequest.Headers.TryAddWithoutValidation(
+                    CorrelationIdConstants.HeaderName,
+                    correlationIdAccessor.CorrelationId);
+            }
+
+            return ValueTask.CompletedTask;
+        });
+    });
 
 var app = builder.Build();
 

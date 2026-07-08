@@ -190,7 +190,7 @@ public sealed class StockReservationApplicationService(
         {
             EventId = Guid.NewGuid(),
             OccurredAtUtc = now,
-            CorrelationId = command.CorrelationId,
+            CorrelationId = command.CorrelationId ?? Guid.NewGuid().ToString("N"),
             OrderId = command.OrderId,
             CustomerName = command.CustomerName!,
             CustomerEmail = command.CustomerEmail!,
@@ -250,7 +250,7 @@ public sealed class StockReservationApplicationService(
         {
             EventId = Guid.NewGuid(),
             OccurredAtUtc = now,
-            CorrelationId = command.CorrelationId,
+            CorrelationId = command.CorrelationId ?? Guid.NewGuid().ToString("N"),
             OrderId = command.OrderId,
             CustomerName = command.CustomerName!,
             CustomerEmail = command.CustomerEmail!,

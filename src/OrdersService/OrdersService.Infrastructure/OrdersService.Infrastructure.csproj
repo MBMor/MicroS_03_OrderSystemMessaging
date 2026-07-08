@@ -13,6 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Observability.Shared\Observability.Shared.csproj" />
     <ProjectReference Include="..\OrdersService.Application\OrdersService.Application.csproj" />
     <ProjectReference Include="..\OrdersService.Domain\OrdersService.Domain.csproj" />
     <ProjectReference Include="..\..\OrderSystem.Contracts\OrderSystem.Contracts.csproj" />

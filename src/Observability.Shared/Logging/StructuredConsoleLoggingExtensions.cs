@@ -11,6 +11,20 @@ public static class StructuredConsoleLoggingExtensions
 
         logging.ClearProviders();
 
+        logging.SetMinimumLevel(LogLevel.Information);
+
+        logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+        logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+        logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
+        logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
+        logging.AddFilter("Yarp.ReverseProxy", LogLevel.Warning);
+
+        logging.AddFilter("ApiGateway", LogLevel.Information);
+        logging.AddFilter("OrdersService", LogLevel.Information);
+        logging.AddFilter("InventoryService", LogLevel.Information);
+        logging.AddFilter("NotificationsService", LogLevel.Information);
+        logging.AddFilter("Observability.Shared", LogLevel.Information);
+
         logging.AddJsonConsole(options =>
         {
             options.IncludeScopes = true;

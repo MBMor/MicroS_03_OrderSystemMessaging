@@ -8,7 +8,7 @@ public sealed record StockReservationFailed : IIntegrationEvent
 
     public required DateTime OccurredAtUtc { get; init; }
 
-    public required Guid CorrelationId { get; init; }
+    public required string CorrelationId { get; init; }
 
     public required Guid OrderId { get; init; }
 
