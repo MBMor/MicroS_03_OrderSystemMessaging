@@ -34,7 +34,10 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Notifications StockReservationFailed consumer is starting.");
+        _logger.LogInformation(
+            "Notifications StockReservationFailed consumer is starting. QueueName: {QueueName}, PrefetchCount: {PrefetchCount}",
+            _topologyOptions.StockReservationFailedQueueName,
+            _consumerOptions.PrefetchCount);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -89,8 +92,9 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
             cancellationToken: stoppingToken);
 
         _logger.LogInformation(
-            "Notifications StockReservationFailed consumer is consuming queue '{QueueName}'.",
-            _topologyOptions.StockReservationFailedQueueName);
+            "Notifications StockReservationFailed consumer is consuming queue '{QueueName}' with prefetch count {PrefetchCount}.",
+            _topologyOptions.StockReservationFailedQueueName,
+            _consumerOptions.PrefetchCount);
 
         await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
     }
@@ -100,9 +104,25 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
         BasicDeliverEventArgs eventArgs,
         CancellationToken cancellationToken)
     {
+        _logger.LogInformation(
+            "StockReservationFailed notification message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}",
+            eventArgs.DeliveryTag,
+            eventArgs.BasicProperties.MessageId,
+            eventArgs.BasicProperties.Type,
+            eventArgs.RoutingKey,
+            eventArgs.Redelivered);
+
         try
         {
             var command = CreateCommand(eventArgs);
+
+            _logger.LogInformation(
+                "StockReservationFailed notification message {MessageId} deserialized. EventType: {EventType}, CorrelationId: {CorrelationId}, OrderId: {OrderId}, DeliveryTag: {DeliveryTag}",
+                command.MessageId,
+                command.EventType,
+                command.CorrelationId,
+                command.OrderId,
+                eventArgs.DeliveryTag);
 
             await using var scope = _serviceScopeFactory.CreateAsyncScope();
 
@@ -117,9 +137,12 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation(
-                "StockReservationFailed notification message {MessageId} for order {OrderId} was processed.",
+                "StockReservationFailed notification message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}",
                 command.MessageId,
-                command.OrderId);
+                command.OrderId,
+                eventArgs.DeliveryTag,
+                command.EventType,
+                _topologyOptions.StockReservationFailedQueueName);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -129,8 +152,13 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
         {
             _logger.LogError(
                 exception,
-                "StockReservationFailed notification message delivery tag {DeliveryTag} failed and will be dead-lettered.",
-                eventArgs.DeliveryTag);
+                "StockReservationFailed notification message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}",
+                eventArgs.DeliveryTag,
+                eventArgs.BasicProperties.MessageId,
+                eventArgs.BasicProperties.Type,
+                eventArgs.RoutingKey,
+                _topologyOptions.StockReservationFailedQueueName,
+                eventArgs.Redelivered);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,

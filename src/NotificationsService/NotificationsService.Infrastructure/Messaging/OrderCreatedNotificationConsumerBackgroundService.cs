@@ -34,7 +34,10 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Notifications OrderCreated consumer is starting.");
+        _logger.LogInformation(
+            "Notifications OrderCreated consumer is starting. QueueName: {QueueName}, PrefetchCount: {PrefetchCount}",
+            _topologyOptions.OrderCreatedQueueName,
+            _consumerOptions.PrefetchCount);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -89,8 +92,9 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
             cancellationToken: stoppingToken);
 
         _logger.LogInformation(
-            "Notifications OrderCreated consumer is consuming queue '{QueueName}'.",
-            _topologyOptions.OrderCreatedQueueName);
+            "Notifications OrderCreated consumer is consuming queue '{QueueName}' with prefetch count {PrefetchCount}.",
+            _topologyOptions.OrderCreatedQueueName,
+            _consumerOptions.PrefetchCount);
 
         await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
     }
@@ -100,9 +104,25 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
         BasicDeliverEventArgs eventArgs,
         CancellationToken cancellationToken)
     {
+        _logger.LogInformation(
+            "OrderCreated notification message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}",
+            eventArgs.DeliveryTag,
+            eventArgs.BasicProperties.MessageId,
+            eventArgs.BasicProperties.Type,
+            eventArgs.RoutingKey,
+            eventArgs.Redelivered);
+
         try
         {
             var command = CreateCommand(eventArgs);
+
+            _logger.LogInformation(
+                "OrderCreated notification message {MessageId} deserialized. EventType: {EventType}, CorrelationId: {CorrelationId}, OrderId: {OrderId}, DeliveryTag: {DeliveryTag}",
+                command.MessageId,
+                command.EventType,
+                command.CorrelationId,
+                command.OrderId,
+                eventArgs.DeliveryTag);
 
             await using var scope = _serviceScopeFactory.CreateAsyncScope();
 
@@ -117,9 +137,12 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation(
-                "OrderCreated notification message {MessageId} for order {OrderId} was processed.",
+                "OrderCreated notification message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}",
                 command.MessageId,
-                command.OrderId);
+                command.OrderId,
+                eventArgs.DeliveryTag,
+                command.EventType,
+                _topologyOptions.OrderCreatedQueueName);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -129,8 +152,13 @@ public sealed class OrderCreatedNotificationConsumerBackgroundService(
         {
             _logger.LogError(
                 exception,
-                "OrderCreated notification message delivery tag {DeliveryTag} failed and will be dead-lettered.",
-                eventArgs.DeliveryTag);
+                "OrderCreated notification message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}",
+                eventArgs.DeliveryTag,
+                eventArgs.BasicProperties.MessageId,
+                eventArgs.BasicProperties.Type,
+                eventArgs.RoutingKey,
+                _topologyOptions.OrderCreatedQueueName,
+                eventArgs.Redelivered);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,

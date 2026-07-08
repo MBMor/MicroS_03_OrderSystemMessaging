@@ -28,7 +28,12 @@ public sealed class InventoryOutboxPublisherBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Inventory outbox publisher background service is starting.");
+        _logger.LogInformation(
+            "Inventory outbox publisher background service is starting. PollingIntervalSeconds: {PollingIntervalSeconds}, BatchSize: {BatchSize}, MaxRetryCount: {MaxRetryCount}, ExchangeName: {ExchangeName}",
+            _outboxPublisherOptions.PollingIntervalSeconds,
+            _outboxPublisherOptions.BatchSize,
+            _outboxPublisherOptions.MaxRetryCount,
+            _rabbitMqOptions.ExchangeName);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -77,12 +82,15 @@ public sealed class InventoryOutboxPublisherBackgroundService(
 
         if (outboxMessages.Count == 0)
         {
+            _logger.LogDebug("No pending Inventory outbox messages found.");
             return;
         }
 
         _logger.LogInformation(
-            "Publishing {OutboxMessageCount} Inventory outbox message(s).",
-            outboxMessages.Count);
+            "Publishing {OutboxMessageCount} Inventory outbox message(s). BatchSize: {BatchSize}, ExchangeName: {ExchangeName}",
+            outboxMessages.Count,
+            _outboxPublisherOptions.BatchSize,
+            _rabbitMqOptions.ExchangeName);
 
         await _topologyInitializer.InitializeAsync(cancellationToken);
 
@@ -91,6 +99,7 @@ public sealed class InventoryOutboxPublisherBackgroundService(
             publisherConfirmationTrackingEnabled: true);
 
         await using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+
         await using var channel = await connection.CreateChannelAsync(
             channelOptions,
             cancellationToken: cancellationToken);
@@ -115,6 +124,15 @@ public sealed class InventoryOutboxPublisherBackgroundService(
     {
         try
         {
+            _logger.LogInformation(
+                "Publishing Inventory outbox message {OutboxMessageId}. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, ExchangeName: {ExchangeName}",
+                outboxMessage.Id,
+                outboxMessage.EventId,
+                outboxMessage.EventType,
+                outboxMessage.RoutingKey,
+                outboxMessage.RetryCount,
+                _rabbitMqOptions.ExchangeName);
+
             await PublishToRabbitMqAsync(
                 channel,
                 outboxMessage,
@@ -125,10 +143,13 @@ public sealed class InventoryOutboxPublisherBackgroundService(
             await dbContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
-                "Inventory outbox message {OutboxMessageId} with event {EventId} was published using routing key '{RoutingKey}'.",
+                "Inventory outbox message {OutboxMessageId} published. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, Status: {Status}",
                 outboxMessage.Id,
                 outboxMessage.EventId,
-                outboxMessage.RoutingKey);
+                outboxMessage.EventType,
+                outboxMessage.RoutingKey,
+                outboxMessage.RetryCount,
+                outboxMessage.Status);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -139,12 +160,20 @@ public sealed class InventoryOutboxPublisherBackgroundService(
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            _logger.LogWarning(
+            var logLevel = outboxMessage.Status == OutboxStatus.Failed
+                ? LogLevel.Error
+                : LogLevel.Warning;
+
+            _logger.Log(
+                logLevel,
                 exception,
-                "Publishing Inventory outbox message {OutboxMessageId} with event {EventId} failed. RetryCount: {RetryCount}. Status: {Status}.",
+                "Publishing Inventory outbox message {OutboxMessageId} failed. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, MaxRetryCount: {MaxRetryCount}, Status: {Status}",
                 outboxMessage.Id,
                 outboxMessage.EventId,
+                outboxMessage.EventType,
+                outboxMessage.RoutingKey,
                 outboxMessage.RetryCount,
+                _outboxPublisherOptions.MaxRetryCount,
                 outboxMessage.Status);
         }
     }

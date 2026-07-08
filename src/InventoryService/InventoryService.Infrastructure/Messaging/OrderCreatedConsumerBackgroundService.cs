@@ -34,7 +34,10 @@ public sealed class OrderCreatedConsumerBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Inventory OrderCreated consumer is starting.");
+        _logger.LogInformation(
+            "Inventory OrderCreated consumer is starting. QueueName: {QueueName}, PrefetchCount: {PrefetchCount}",
+            _topologyOptions.OrderCreatedQueueName,
+            _consumerOptions.PrefetchCount);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -113,9 +116,26 @@ public sealed class OrderCreatedConsumerBackgroundService(
         BasicDeliverEventArgs eventArgs,
         CancellationToken cancellationToken)
     {
+        _logger.LogInformation(
+            "OrderCreated message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}",
+            eventArgs.DeliveryTag,
+            eventArgs.BasicProperties.MessageId,
+            eventArgs.BasicProperties.Type,
+            eventArgs.RoutingKey,
+            eventArgs.Redelivered);
+
         try
         {
             var command = CreateCommand(eventArgs);
+
+            _logger.LogInformation(
+                "OrderCreated message {MessageId} deserialized. EventType: {EventType}, CorrelationId: {CorrelationId}, OrderId: {OrderId}, ItemCount: {ItemCount}, DeliveryTag: {DeliveryTag}",
+                command.MessageId,
+                command.EventType,
+                command.CorrelationId,
+                command.OrderId,
+                command.Items?.Count ?? 0,
+                eventArgs.DeliveryTag);
 
             await using var scope = _serviceScopeFactory.CreateAsyncScope();
 
@@ -132,9 +152,12 @@ public sealed class OrderCreatedConsumerBackgroundService(
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation(
-                "OrderCreated message {MessageId} for order {OrderId} was processed and acknowledged.",
+                "OrderCreated message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}",
                 command.MessageId,
-                command.OrderId);
+                command.OrderId,
+                eventArgs.DeliveryTag,
+                command.EventType,
+                _topologyOptions.OrderCreatedQueueName);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -144,8 +167,13 @@ public sealed class OrderCreatedConsumerBackgroundService(
         {
             _logger.LogError(
                 exception,
-                "OrderCreated message delivery tag {DeliveryTag} failed and will be dead-lettered.",
-                eventArgs.DeliveryTag);
+                "OrderCreated message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}",
+                eventArgs.DeliveryTag,
+                eventArgs.BasicProperties.MessageId,
+                eventArgs.BasicProperties.Type,
+                eventArgs.RoutingKey,
+                _topologyOptions.OrderCreatedQueueName,
+                eventArgs.Redelivered);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,

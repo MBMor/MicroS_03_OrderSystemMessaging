@@ -34,7 +34,10 @@ public sealed class StockReservedConsumerBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Orders StockReserved consumer is starting.");
+        _logger.LogInformation(
+            "Orders StockReserved consumer is starting. QueueName: {QueueName}, PrefetchCount: {PrefetchCount}",
+            _topologyOptions.StockReservedQueueName,
+            _consumerOptions.PrefetchCount);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -113,9 +116,25 @@ public sealed class StockReservedConsumerBackgroundService(
         BasicDeliverEventArgs eventArgs,
         CancellationToken cancellationToken)
     {
+        _logger.LogInformation(
+            "StockReserved message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}",
+            eventArgs.DeliveryTag,
+            eventArgs.BasicProperties.MessageId,
+            eventArgs.BasicProperties.Type,
+            eventArgs.RoutingKey,
+            eventArgs.Redelivered);
+
         try
         {
             var command = CreateCommand(eventArgs);
+
+            _logger.LogInformation(
+                "StockReserved message {MessageId} deserialized. EventType: {EventType}, CorrelationId: {CorrelationId}, OrderId: {OrderId}, DeliveryTag: {DeliveryTag}",
+                command.MessageId,
+                command.EventType,
+                command.CorrelationId,
+                command.OrderId,
+                eventArgs.DeliveryTag);
 
             await using var scope = _serviceScopeFactory.CreateAsyncScope();
 
@@ -132,9 +151,12 @@ public sealed class StockReservedConsumerBackgroundService(
                 cancellationToken: cancellationToken);
 
             _logger.LogInformation(
-                "StockReserved message {MessageId} for order {OrderId} was processed and acknowledged.",
+                "StockReserved message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}",
                 command.MessageId,
-                command.OrderId);
+                command.OrderId,
+                eventArgs.DeliveryTag,
+                command.EventType,
+                _topologyOptions.StockReservedQueueName);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -144,8 +166,13 @@ public sealed class StockReservedConsumerBackgroundService(
         {
             _logger.LogError(
                 exception,
-                "StockReserved message delivery tag {DeliveryTag} failed and will be dead-lettered.",
-                eventArgs.DeliveryTag);
+                "StockReserved message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}",
+                eventArgs.DeliveryTag,
+                eventArgs.BasicProperties.MessageId,
+                eventArgs.BasicProperties.Type,
+                eventArgs.RoutingKey,
+                _topologyOptions.StockReservedQueueName,
+                eventArgs.Redelivered);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,
