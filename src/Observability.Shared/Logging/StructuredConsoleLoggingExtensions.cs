@@ -14,7 +14,14 @@ public static class StructuredConsoleLoggingExtensions
         logging.SetMinimumLevel(LogLevel.Information);
 
         logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+        logging.AddFilter("Microsoft.AspNetCore.Mvc", LogLevel.Warning);
+        logging.AddFilter("Microsoft.AspNetCore.Routing", LogLevel.Warning);
+
         logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+        logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+        logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Transaction", LogLevel.Warning);
+        logging.AddFilter("Microsoft.EntityFrameworkCore.Infrastructure", LogLevel.Warning);
+
         logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
         logging.AddFilter("System.Net.Http.HttpClient", LogLevel.Warning);
         logging.AddFilter("Yarp.ReverseProxy", LogLevel.Warning);
