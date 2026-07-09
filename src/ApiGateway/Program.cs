@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using Observability.Shared.Correlation;
 using Observability.Shared.Logging;
 using Yarp.ReverseProxy.Transforms;
+using Observability.Shared.OpenTelemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +18,12 @@ builder.Logging.UseStructuredJsonConsole();
 builder.Services.AddControllers();
 
 builder.Services.AddCorrelationId();
+
+builder.Services.AddOrderSystemOpenTelemetry(
+    builder.Configuration,
+    builder.Environment,
+    serviceName: "api-gateway",
+    serviceDisplayName: "API Gateway");
 
 builder.Services.AddHttpClient("health-checks");
 
