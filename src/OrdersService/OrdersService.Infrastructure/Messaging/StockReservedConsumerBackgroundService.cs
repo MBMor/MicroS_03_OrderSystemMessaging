@@ -1,16 +1,18 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Observability.Shared.Correlation;
+using Observability.Shared.Messaging;
+using Observability.Shared.Tracing;
 using OrderSystem.Contracts.IntegrationEvents;
 using OrdersService.Application.StockReservations.Abstractions;
 using OrdersService.Application.StockReservations.Contracts;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using Observability.Shared.Correlation;
-using Observability.Shared.Messaging;
 
 namespace OrdersService.Infrastructure.Messaging;
 
@@ -58,16 +60,9 @@ public sealed class StockReservedConsumerBackgroundService(
                     "Orders StockReserved consumer failed. Retrying in {RetryDelaySeconds} second(s).",
                     _consumerOptions.ConnectionRetryDelaySeconds);
 
-                try
-                {
-                    await Task.Delay(
-                        TimeSpan.FromSeconds(_consumerOptions.ConnectionRetryDelaySeconds),
-                        stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
+                await Task.Delay(
+                    TimeSpan.FromSeconds(_consumerOptions.ConnectionRetryDelaySeconds),
+                    stoppingToken);
             }
         }
 
@@ -83,7 +78,7 @@ public sealed class StockReservedConsumerBackgroundService(
 
         await channel.BasicQosAsync(
             prefetchSize: 0,
-            prefetchCount: _consumerOptions.PrefetchCount,
+            prefetchCount: (ushort)_consumerOptions.PrefetchCount,
             global: false,
             cancellationToken: stoppingToken);
 
@@ -108,9 +103,7 @@ public sealed class StockReservedConsumerBackgroundService(
             _topologyOptions.StockReservedQueueName,
             _consumerOptions.PrefetchCount);
 
-        await Task.Delay(
-            Timeout.InfiniteTimeSpan,
-            stoppingToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
     }
 
     private async Task HandleMessageAsync(
@@ -120,6 +113,8 @@ public sealed class StockReservedConsumerBackgroundService(
     {
         var fallbackCorrelationId = RabbitMqMessageHeaders.GetCorrelationIdOrCreate(
             eventArgs.BasicProperties.Headers);
+
+        Activity? consumeActivity = null;
 
         try
         {
@@ -136,6 +131,11 @@ public sealed class StockReservedConsumerBackgroundService(
 
             using var correlationScope = CorrelationIdLogScope.Begin(
                 _logger,
+                correlationId);
+
+            consumeActivity = StartConsumeActivity(
+                eventArgs,
+                _topologyOptions.StockReservedQueueName,
                 correlationId);
 
             _logger.LogInformation(
@@ -174,6 +174,8 @@ public sealed class StockReservedConsumerBackgroundService(
                 multiple: false,
                 cancellationToken: cancellationToken);
 
+            consumeActivity?.SetStatus(ActivityStatusCode.Ok);
+
             _logger.LogInformation(
                 "StockReserved message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}, CorrelationId: {CorrelationId}",
                 command.MessageId,
@@ -189,6 +191,13 @@ public sealed class StockReservedConsumerBackgroundService(
         }
         catch (Exception exception)
         {
+            consumeActivity ??= StartConsumeActivity(
+                eventArgs,
+                _topologyOptions.StockReservedQueueName,
+                fallbackCorrelationId);
+
+            consumeActivity.SetError(exception);
+
             using var correlationScope = CorrelationIdLogScope.Begin(
                 _logger,
                 fallbackCorrelationId);
@@ -210,6 +219,10 @@ public sealed class StockReservedConsumerBackgroundService(
                 requeue: false,
                 cancellationToken: cancellationToken);
         }
+        finally
+        {
+            consumeActivity?.Dispose();
+        }
     }
 
     private static MarkOrderStockReservedCommand CreateCommand(
@@ -217,36 +230,69 @@ public sealed class StockReservedConsumerBackgroundService(
     {
         var json = Encoding.UTF8.GetString(eventArgs.Body.Span);
 
-        var stockReserved = JsonSerializer.Deserialize<StockReserved>(
+        var integrationEvent = JsonSerializer.Deserialize<StockReserved>(
             json,
             JsonSerializerOptions);
 
-        if (stockReserved is null)
+        if (integrationEvent is null)
         {
-            throw new JsonException("StockReserved message payload could not be deserialized.");
+            throw new InvalidOperationException("StockReserved message payload could not be deserialized.");
         }
 
         return new MarkOrderStockReservedCommand
         {
-            MessageId = GetMessageId(eventArgs, stockReserved),
-            EventType = stockReserved.EventType,
-            CorrelationId = stockReserved.CorrelationId,
-            OrderId = stockReserved.OrderId
+            MessageId = integrationEvent.EventId,
+            EventType = integrationEvent.EventType,
+            CorrelationId = integrationEvent.CorrelationId,
+            OrderId = integrationEvent.OrderId
         };
     }
 
-    private static Guid GetMessageId(
+    private static Activity? StartConsumeActivity(
         BasicDeliverEventArgs eventArgs,
-        StockReserved stockReserved)
+        string queueName,
+        string correlationId)
     {
-        var messageId = eventArgs.BasicProperties.MessageId;
+        var activity = OrderSystemActivitySources.Messaging.StartActivity(
+            "rabbitmq.consume",
+            ActivityKind.Consumer);
 
-        if (!string.IsNullOrWhiteSpace(messageId)
-            && Guid.TryParse(messageId, out var parsedMessageId))
-        {
-            return parsedMessageId;
-        }
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingSystem,
+            "rabbitmq");
 
-        return stockReserved.EventId;
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingOperation,
+            "consume");
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingMessageId,
+            eventArgs.BasicProperties.MessageId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            eventArgs.BasicProperties.Type);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqQueueName,
+            queueName);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqRoutingKey,
+            eventArgs.RoutingKey);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqDeliveryTag,
+            eventArgs.DeliveryTag);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqRedelivered,
+            eventArgs.Redelivered);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            correlationId);
+
+        return activity;
     }
 }

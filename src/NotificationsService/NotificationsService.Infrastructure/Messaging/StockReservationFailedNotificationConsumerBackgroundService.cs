@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -6,11 +7,12 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NotificationsService.Application.EventNotifications.Abstractions;
 using NotificationsService.Application.EventNotifications.Contracts;
+using Observability.Shared.Correlation;
+using Observability.Shared.Messaging;
+using Observability.Shared.Tracing;
 using OrderSystem.Contracts.IntegrationEvents;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using Observability.Shared.Correlation;
-using Observability.Shared.Messaging;
 
 namespace NotificationsService.Infrastructure.Messaging;
 
@@ -76,7 +78,7 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
 
         await channel.BasicQosAsync(
             prefetchSize: 0,
-            prefetchCount: _consumerOptions.PrefetchCount,
+            prefetchCount: (ushort)_consumerOptions.PrefetchCount,
             global: false,
             cancellationToken: stoppingToken);
 
@@ -84,7 +86,10 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
 
         consumer.ReceivedAsync += async (_, eventArgs) =>
         {
-            await HandleMessageAsync(channel, eventArgs, stoppingToken);
+            await HandleMessageAsync(
+                channel,
+                eventArgs,
+                stoppingToken);
         };
 
         await channel.BasicConsumeAsync(
@@ -109,6 +114,8 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
         var fallbackCorrelationId = RabbitMqMessageHeaders.GetCorrelationIdOrCreate(
             eventArgs.BasicProperties.Headers);
 
+        Activity? consumeActivity = null;
+
         try
         {
             var command = CreateCommand(eventArgs);
@@ -124,6 +131,11 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
 
             using var correlationScope = CorrelationIdLogScope.Begin(
                 _logger,
+                correlationId);
+
+            consumeActivity = StartConsumeActivity(
+                eventArgs,
+                _topologyOptions.StockReservationFailedQueueName,
                 correlationId);
 
             _logger.LogInformation(
@@ -162,6 +174,8 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
                 multiple: false,
                 cancellationToken: cancellationToken);
 
+            consumeActivity?.SetStatus(ActivityStatusCode.Ok);
+
             _logger.LogInformation(
                 "StockReservationFailed notification message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}, CorrelationId: {CorrelationId}",
                 command.MessageId,
@@ -177,6 +191,13 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
         }
         catch (Exception exception)
         {
+            consumeActivity ??= StartConsumeActivity(
+                eventArgs,
+                _topologyOptions.StockReservationFailedQueueName,
+                fallbackCorrelationId);
+
+            consumeActivity.SetError(exception);
+
             using var correlationScope = CorrelationIdLogScope.Begin(
                 _logger,
                 fallbackCorrelationId);
@@ -198,6 +219,10 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
                 requeue: false,
                 cancellationToken: cancellationToken);
         }
+        finally
+        {
+            consumeActivity?.Dispose();
+        }
     }
 
     private static CreateStockReservationFailedNotificationCommand CreateCommand(
@@ -211,12 +236,12 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
 
         if (integrationEvent is null)
         {
-            throw new JsonException("StockReservationFailed message payload could not be deserialized.");
+            throw new InvalidOperationException("StockReservationFailed notification message payload could not be deserialized.");
         }
 
         return new CreateStockReservationFailedNotificationCommand
         {
-            MessageId = GetMessageId(eventArgs, integrationEvent.EventId),
+            MessageId = integrationEvent.EventId,
             EventType = integrationEvent.EventType,
             CorrelationId = integrationEvent.CorrelationId,
             OrderId = integrationEvent.OrderId,
@@ -226,18 +251,51 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
         };
     }
 
-    private static Guid GetMessageId(
+    private static Activity? StartConsumeActivity(
         BasicDeliverEventArgs eventArgs,
-        Guid fallbackEventId)
+        string queueName,
+        string correlationId)
     {
-        var messageId = eventArgs.BasicProperties.MessageId;
+        var activity = OrderSystemActivitySources.Messaging.StartActivity(
+            "rabbitmq.consume",
+            ActivityKind.Consumer);
 
-        if (!string.IsNullOrWhiteSpace(messageId)
-            && Guid.TryParse(messageId, out var parsedMessageId))
-        {
-            return parsedMessageId;
-        }
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingSystem,
+            "rabbitmq");
 
-        return fallbackEventId;
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingOperation,
+            "consume");
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingMessageId,
+            eventArgs.BasicProperties.MessageId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            eventArgs.BasicProperties.Type);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqQueueName,
+            queueName);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqRoutingKey,
+            eventArgs.RoutingKey);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqDeliveryTag,
+            eventArgs.DeliveryTag);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqRedelivered,
+            eventArgs.Redelivered);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            correlationId);
+
+        return activity;
     }
 }

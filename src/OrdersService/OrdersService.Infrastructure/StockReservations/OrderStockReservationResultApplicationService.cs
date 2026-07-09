@@ -1,6 +1,8 @@
-﻿using FluentValidation;
+﻿using System.Diagnostics;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Observability.Shared.Tracing;
 using OrdersService.Application.Common.Abstractions;
 using OrdersService.Application.Common.Exceptions;
 using OrdersService.Application.StockReservations.Abstractions;
@@ -31,55 +33,116 @@ public sealed class OrderStockReservationResultApplicationService(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var validationResult = await _stockReservedValidator.ValidateAsync(
-            command,
-            cancellationToken);
+        using var activity = OrderSystemActivitySources.Orders.StartActivity(
+            "orders.stock_reserved.apply",
+            ActivityKind.Internal);
 
-        if (!validationResult.IsValid)
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OrderId,
+            command.OrderId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventId,
+            command.MessageId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            command.EventType);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            command.CorrelationId);
+
+        try
         {
-            throw new ValidationException(validationResult.Errors);
-        }
-
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-
-        var alreadyProcessed = await IsAlreadyProcessedAsync(
-            command.MessageId,
-            command.EventType!,
-            ConsumerNames.OrdersStockReservedConsumer,
-            cancellationToken);
-
-        if (alreadyProcessed)
-        {
-            _logger.LogInformation(
-                "Duplicate stock reserved message {MessageId} skipped by {ConsumerName}",
-                command.MessageId,
-                ConsumerNames.OrdersStockReservedConsumer);
-
-            await transaction.CommitAsync(cancellationToken);
-            return;
-        }
-
-        var order = await _dbContext.Orders
-            .FirstOrDefaultAsync(
-                order => order.Id == command.OrderId,
+            var validationResult = await _stockReservedValidator.ValidateAsync(
+                command,
                 cancellationToken);
 
-        if (order is null)
-        {
-            _logger.LogWarning(
-                "Order {OrderId} was not found while processing stock reserved message {MessageId}",
-                command.OrderId,
-                command.MessageId);
+            if (!validationResult.IsValid)
+            {
+                throw new ValidationException(validationResult.Errors);
+            }
 
-            throw new OrderNotFoundException(command.OrderId);
-        }
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        if (order.Status == OrderStatus.StockReserved)
-        {
+            var alreadyProcessed = await IsAlreadyProcessedAsync(
+                command.MessageId,
+                command.EventType!,
+                ConsumerNames.OrdersStockReservedConsumer,
+                cancellationToken);
+
+            if (alreadyProcessed)
+            {
+                activity.SetTagIfNotNull(
+                    "messaging.duplicate",
+                    true);
+
+                _logger.LogInformation(
+                    "Duplicate stock reserved message {MessageId} skipped by {ConsumerName}",
+                    command.MessageId,
+                    ConsumerNames.OrdersStockReservedConsumer);
+
+                await transaction.CommitAsync(cancellationToken);
+
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                return;
+            }
+
+            var order = await _dbContext.Orders
+                .FirstOrDefaultAsync(
+                    order => order.Id == command.OrderId,
+                    cancellationToken);
+
+            if (order is null)
+            {
+                _logger.LogWarning(
+                    "Order {OrderId} was not found while processing stock reserved message {MessageId}",
+                    command.OrderId,
+                    command.MessageId);
+
+                throw new OrderNotFoundException(command.OrderId);
+            }
+
+            if (order.Status == OrderStatus.StockReserved)
+            {
+                activity.SetTagIfNotNull(
+                    "order.already_has_target_status",
+                    true);
+
+                activity.SetTagIfNotNull(
+                    OrderSystemActivityTagNames.OrderStatus,
+                    order.Status.ToString());
+
+                _logger.LogInformation(
+                    "Order {OrderId} already has status {OrderStatus}. Message {MessageId} will be marked as processed",
+                    order.Id,
+                    order.Status,
+                    command.MessageId);
+
+                AddProcessedMessage(
+                    command.MessageId,
+                    command.EventType!,
+                    ConsumerNames.OrdersStockReservedConsumer);
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+
+                await transaction.CommitAsync(cancellationToken);
+
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                return;
+            }
+
+            order.MarkStockReserved(_clock.UtcNow);
+
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.OrderStatus,
+                OrderStatus.StockReserved.ToString());
+
             _logger.LogInformation(
-                "Order {OrderId} already has status {OrderStatus}. Message {MessageId} will be marked as processed",
+                "Order {OrderId} status changed to {OrderStatus} after message {MessageId}",
                 order.Id,
-                order.Status,
+                OrderStatus.StockReserved,
                 command.MessageId);
 
             AddProcessedMessage(
@@ -88,25 +151,16 @@ public sealed class OrderStockReservationResultApplicationService(
                 ConsumerNames.OrdersStockReservedConsumer);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
-            return;
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
         }
-
-        order.MarkStockReserved(_clock.UtcNow);
-
-        _logger.LogInformation(
-            "Order {OrderId} status changed to {OrderStatus} after message {MessageId}",
-            order.Id,
-            OrderStatus.StockReserved,
-            command.MessageId);
-
-        AddProcessedMessage(
-            command.MessageId,
-            command.EventType!,
-            ConsumerNames.OrdersStockReservedConsumer);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        catch (Exception exception)
+        {
+            activity.SetError(exception);
+            throw;
+        }
     }
 
     public async Task HandleStockReservationFailedAsync(
@@ -115,56 +169,122 @@ public sealed class OrderStockReservationResultApplicationService(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var validationResult = await _stockReservationFailedValidator.ValidateAsync(
-            command,
-            cancellationToken);
+        using var activity = OrderSystemActivitySources.Orders.StartActivity(
+            "orders.stock_reservation_failed.apply",
+            ActivityKind.Internal);
 
-        if (!validationResult.IsValid)
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OrderId,
+            command.OrderId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventId,
+            command.MessageId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            command.EventType);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            command.CorrelationId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.ReservationFailureReason,
+            command.Reason);
+
+        try
         {
-            throw new ValidationException(validationResult.Errors);
-        }
-
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-
-        var alreadyProcessed = await IsAlreadyProcessedAsync(
-            command.MessageId,
-            command.EventType!,
-            ConsumerNames.OrdersStockReservationFailedConsumer,
-            cancellationToken);
-
-        if (alreadyProcessed)
-        {
-            _logger.LogInformation(
-                "Duplicate stock reservation failed message {MessageId} skipped by {ConsumerName}",
-                command.MessageId,
-                ConsumerNames.OrdersStockReservationFailedConsumer);
-
-            await transaction.CommitAsync(cancellationToken);
-            return;
-        }
-
-        var order = await _dbContext.Orders
-            .FirstOrDefaultAsync(
-                order => order.Id == command.OrderId,
+            var validationResult = await _stockReservationFailedValidator.ValidateAsync(
+                command,
                 cancellationToken);
 
-        if (order is null)
-        {
+            if (!validationResult.IsValid)
+            {
+                throw new ValidationException(validationResult.Errors);
+            }
+
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+            var alreadyProcessed = await IsAlreadyProcessedAsync(
+                command.MessageId,
+                command.EventType!,
+                ConsumerNames.OrdersStockReservationFailedConsumer,
+                cancellationToken);
+
+            if (alreadyProcessed)
+            {
+                activity.SetTagIfNotNull(
+                    "messaging.duplicate",
+                    true);
+
+                _logger.LogInformation(
+                    "Duplicate stock reservation failed message {MessageId} skipped by {ConsumerName}",
+                    command.MessageId,
+                    ConsumerNames.OrdersStockReservationFailedConsumer);
+
+                await transaction.CommitAsync(cancellationToken);
+
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                return;
+            }
+
+            var order = await _dbContext.Orders
+                .FirstOrDefaultAsync(
+                    order => order.Id == command.OrderId,
+                    cancellationToken);
+
+            if (order is null)
+            {
+                _logger.LogWarning(
+                    "Order {OrderId} was not found while processing stock reservation failed message {MessageId}",
+                    command.OrderId,
+                    command.MessageId);
+
+                throw new OrderNotFoundException(command.OrderId);
+            }
+
+            if (order.Status == OrderStatus.StockReservationFailed)
+            {
+                activity.SetTagIfNotNull(
+                    "order.already_has_target_status",
+                    true);
+
+                activity.SetTagIfNotNull(
+                    OrderSystemActivityTagNames.OrderStatus,
+                    order.Status.ToString());
+
+                _logger.LogInformation(
+                    "Order {OrderId} already has status {OrderStatus}. Message {MessageId} will be marked as processed",
+                    order.Id,
+                    order.Status,
+                    command.MessageId);
+
+                AddProcessedMessage(
+                    command.MessageId,
+                    command.EventType!,
+                    ConsumerNames.OrdersStockReservationFailedConsumer);
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+
+                await transaction.CommitAsync(cancellationToken);
+
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                return;
+            }
+
+            order.MarkStockReservationFailed(_clock.UtcNow);
+
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.OrderStatus,
+                OrderStatus.StockReservationFailed.ToString());
+
             _logger.LogWarning(
-                "Order {OrderId} was not found while processing stock reservation failed message {MessageId}",
-                command.OrderId,
-                command.MessageId);
-
-            throw new OrderNotFoundException(command.OrderId);
-        }
-
-        if (order.Status == OrderStatus.StockReservationFailed)
-        {
-            _logger.LogInformation(
-                "Order {OrderId} already has status {OrderStatus}. Message {MessageId} will be marked as processed",
+                "Order {OrderId} status changed to {OrderStatus} after message {MessageId}. Reason: {Reason}",
                 order.Id,
-                order.Status,
-                command.MessageId);
+                OrderStatus.StockReservationFailed,
+                command.MessageId,
+                command.Reason);
 
             AddProcessedMessage(
                 command.MessageId,
@@ -172,26 +292,16 @@ public sealed class OrderStockReservationResultApplicationService(
                 ConsumerNames.OrdersStockReservationFailedConsumer);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
-            return;
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
         }
-
-        order.MarkStockReservationFailed(_clock.UtcNow);
-
-        _logger.LogWarning(
-            "Order {OrderId} status changed to {OrderStatus} after message {MessageId}. Reason: {Reason}",
-            order.Id,
-            OrderStatus.StockReservationFailed,
-            command.MessageId,
-            command.Reason);
-
-        AddProcessedMessage(
-            command.MessageId,
-            command.EventType!,
-            ConsumerNames.OrdersStockReservationFailedConsumer);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        catch (Exception exception)
+        {
+            activity.SetError(exception);
+            throw;
+        }
     }
 
     private async Task<bool> IsAlreadyProcessedAsync(

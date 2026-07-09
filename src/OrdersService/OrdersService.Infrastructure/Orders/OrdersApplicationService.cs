@@ -1,8 +1,10 @@
-﻿using System.Text.Json;
+﻿using System.Diagnostics;
+using System.Text.Json;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Observability.Shared.Correlation;
+using Observability.Shared.Tracing;
 using OrdersService.Application.Common.Abstractions;
 using OrdersService.Application.Common.Pagination;
 using OrdersService.Application.Orders.Abstractions;
@@ -52,72 +54,120 @@ public sealed class OrdersApplicationService(
         }
 
         var orderId = Guid.NewGuid();
-        var now = _clock.UtcNow;
 
-        var orderItems = request.Items!
-            .Select(item => new OrderItem(
+        using var activity = OrderSystemActivitySources.Orders.StartActivity(
+            "orders.create",
+            ActivityKind.Internal);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OrderId,
+            orderId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OrderItemCount,
+            request.Items?.Count);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            _correlationIdAccessor.CorrelationId);
+
+        try
+        {
+            var now = _clock.UtcNow;
+
+            var orderItems = request.Items!
+                .Select(item => new OrderItem(
+                    id: Guid.NewGuid(),
+                    orderId: orderId,
+                    productId: item.ProductId,
+                    productName: item.ProductName!,
+                    quantity: item.Quantity))
+                .ToList();
+
+            var order = new Order(
+                id: orderId,
+                customerName: request.CustomerName!,
+                customerEmail: request.CustomerEmail!,
+                items: orderItems,
+                createdAtUtc: now);
+
+            var correlationId = _correlationIdAccessor.CorrelationId
+                ?? CorrelationIdGenerator.Create();
+
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.CorrelationId,
+                correlationId);
+
+            var orderCreatedEvent = CreateOrderCreatedEvent(
+                order,
+                now,
+                correlationId);
+
+            var payload = JsonSerializer.Serialize(
+                orderCreatedEvent,
+                JsonSerializerOptions);
+
+            var outboxMessage = new OutboxMessage(
                 id: Guid.NewGuid(),
-                orderId: orderId,
-                productId: item.ProductId,
-                productName: item.ProductName!,
-                quantity: item.Quantity))
-            .ToList();
+                eventId: orderCreatedEvent.EventId,
+                eventType: orderCreatedEvent.EventType,
+                routingKey: RabbitMqRoutingKeys.OrderCreated,
+                payload: payload,
+                occurredAtUtc: orderCreatedEvent.OccurredAtUtc);
 
-        var order = new Order(
-            id: orderId,
-            customerName: request.CustomerName!,
-            customerEmail: request.CustomerEmail!,
-            items: orderItems,
-            createdAtUtc: now);
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.EventId,
+                orderCreatedEvent.EventId);
 
-        var correlationId = _correlationIdAccessor.CorrelationId
-            ?? CorrelationIdGenerator.Create();
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.EventType,
+                orderCreatedEvent.EventType);
 
-        var orderCreatedEvent = CreateOrderCreatedEvent(
-            order,
-            now,
-            correlationId);
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.OutboxMessageId,
+                outboxMessage.Id);
 
-        var payload = JsonSerializer.Serialize(
-            orderCreatedEvent,
-            JsonSerializerOptions);
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.OrderStatus,
+                order.Status.ToString());
 
-        var outboxMessage = new OutboxMessage(
-            id: Guid.NewGuid(),
-            eventId: orderCreatedEvent.EventId,
-            eventType: orderCreatedEvent.EventType,
-            routingKey: RabbitMqRoutingKeys.OrderCreated,
-            payload: payload,
-            occurredAtUtc: orderCreatedEvent.OccurredAtUtc);
+            _logger.LogInformation(
+                "Creating order {OrderId} with {ItemCount} items",
+                order.Id,
+                order.Items.Count);
 
-        _logger.LogInformation(
-            "Creating order {OrderId} with {ItemCount} items",
-            order.Id,
-            order.Items.Count);
+            _logger.LogInformation(
+                "OrderCreated outbox message {OutboxMessageId} prepared for order {OrderId}. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, CorrelationId: {CorrelationId}",
+                outboxMessage.Id,
+                order.Id,
+                outboxMessage.EventId,
+                outboxMessage.EventType,
+                outboxMessage.RoutingKey,
+                correlationId);
 
-        _logger.LogInformation(
-            "OrderCreated outbox message {OutboxMessageId} prepared for order {OrderId}. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, CorrelationId: {CorrelationId}",
-            outboxMessage.Id,
-            order.Id,
-            outboxMessage.EventId,
-            outboxMessage.EventType,
-            outboxMessage.RoutingKey,
-            correlationId);
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+            _dbContext.Orders.Add(order);
+            _dbContext.OutboxMessages.Add(outboxMessage);
 
-        _dbContext.Orders.Add(order);
-        _dbContext.OutboxMessages.Add(outboxMessage);
+            await _dbContext.SaveChangesAsync(cancellationToken);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
-        _logger.LogInformation(
-            "Order {OrderId} created and outbox message {OutboxMessageId} stored",
-            order.Id,
-            outboxMessage.Id);
+            activity?.SetStatus(ActivityStatusCode.Ok);
 
-        return MapToResponse(order);
+            _logger.LogInformation(
+                "Order {OrderId} created and outbox message {OutboxMessageId} stored",
+                order.Id,
+                outboxMessage.Id);
+
+            return MapToResponse(order);
+        }
+        catch (Exception exception)
+        {
+            activity.SetError(exception);
+            throw;
+        }
     }
 
     public async Task<OrderResponse?> GetByIdAsync(

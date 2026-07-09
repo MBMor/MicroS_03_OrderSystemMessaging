@@ -1,10 +1,12 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Observability.Shared.Messaging;
+using Observability.Shared.Tracing;
 using OrdersService.Application.Common.Abstractions;
 using OrdersService.Infrastructure.Messaging;
 using OrdersService.Infrastructure.Persistence;
@@ -87,32 +89,54 @@ public sealed class OrdersOutboxPublisherBackgroundService(
             return;
         }
 
-        _logger.LogInformation(
-            "Publishing {OutboxMessageCount} Orders outbox message(s). BatchSize: {BatchSize}, ExchangeName: {ExchangeName}",
-            outboxMessages.Count,
-            _outboxPublisherOptions.BatchSize,
+        using var activity = OrderSystemActivitySources.Outbox.StartActivity(
+            "outbox.publish_batch",
+            ActivityKind.Internal);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OutboxBatchSize,
+            outboxMessages.Count);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingDestinationName,
             _rabbitMqOptions.ExchangeName);
 
-        await _topologyInitializer.InitializeAsync(cancellationToken);
-
-        var channelOptions = new CreateChannelOptions(
-            publisherConfirmationsEnabled: true,
-            publisherConfirmationTrackingEnabled: true);
-
-        await using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
-
-        await using var channel = await connection.CreateChannelAsync(
-            channelOptions,
-            cancellationToken: cancellationToken);
-
-        foreach (var outboxMessage in outboxMessages)
+        try
         {
-            await PublishSingleMessageAsync(
-                dbContext,
-                clock,
-                channel,
-                outboxMessage,
-                cancellationToken);
+            _logger.LogInformation(
+                "Publishing {OutboxMessageCount} Orders outbox message(s). BatchSize: {BatchSize}, ExchangeName: {ExchangeName}",
+                outboxMessages.Count,
+                _outboxPublisherOptions.BatchSize,
+                _rabbitMqOptions.ExchangeName);
+
+            await _topologyInitializer.InitializeAsync(cancellationToken);
+
+            var channelOptions = new CreateChannelOptions(
+                publisherConfirmationsEnabled: true,
+                publisherConfirmationTrackingEnabled: true);
+
+            await using var connection = await _connectionFactory.CreateConnectionAsync(cancellationToken);
+
+            await using var channel = await connection.CreateChannelAsync(
+                channelOptions,
+                cancellationToken: cancellationToken);
+
+            foreach (var outboxMessage in outboxMessages)
+            {
+                await PublishSingleMessageAsync(
+                    dbContext,
+                    clock,
+                    channel,
+                    outboxMessage,
+                    cancellationToken);
+            }
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            activity.SetError(exception);
+            throw;
         }
     }
 
@@ -125,6 +149,34 @@ public sealed class OrdersOutboxPublisherBackgroundService(
     {
         var correlationId = RabbitMqMessageHeaders.GetCorrelationIdFromJsonPayload(
             outboxMessage.Payload);
+
+        using var activity = OrderSystemActivitySources.Outbox.StartActivity(
+            "outbox.publish_message",
+            ActivityKind.Internal);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OutboxMessageId,
+            outboxMessage.Id);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventId,
+            outboxMessage.EventId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            outboxMessage.EventType);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqRoutingKey,
+            outboxMessage.RoutingKey);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OutboxRetryCount,
+            outboxMessage.RetryCount);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            correlationId);
 
         try
         {
@@ -148,6 +200,12 @@ public sealed class OrdersOutboxPublisherBackgroundService(
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.OutboxMessageStatus,
+                outboxMessage.Status.ToString());
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
+
             _logger.LogInformation(
                 "Orders outbox message {OutboxMessageId} published. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, Status: {Status}, CorrelationId: {CorrelationId}",
                 outboxMessage.Id,
@@ -166,6 +224,12 @@ public sealed class OrdersOutboxPublisherBackgroundService(
                 _outboxPublisherOptions.MaxRetryCount);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            activity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.OutboxMessageStatus,
+                outboxMessage.Status.ToString());
+
+            activity.SetError(exception);
 
             var logLevel = outboxMessage.Status == OutboxStatus.Failed
                 ? LogLevel.Error
@@ -217,13 +281,55 @@ public sealed class OrdersOutboxPublisherBackgroundService(
             Headers = headers
         };
 
-        await channel.BasicPublishAsync(
-            exchange: _rabbitMqOptions.ExchangeName,
-            routingKey: outboxMessage.RoutingKey,
-            mandatory: true,
-            basicProperties: properties,
-            body: body,
-            cancellationToken: cancellationToken);
+        using var activity = OrderSystemActivitySources.Messaging.StartActivity(
+            "rabbitmq.publish",
+            ActivityKind.Producer);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingSystem,
+            "rabbitmq");
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingOperation,
+            "publish");
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingDestinationName,
+            _rabbitMqOptions.ExchangeName);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqRoutingKey,
+            outboxMessage.RoutingKey);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingMessageId,
+            outboxMessage.EventId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            outboxMessage.EventType);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            correlationId);
+
+        try
+        {
+            await channel.BasicPublishAsync(
+                exchange: _rabbitMqOptions.ExchangeName,
+                routingKey: outboxMessage.RoutingKey,
+                mandatory: true,
+                basicProperties: properties,
+                body: body,
+                cancellationToken: cancellationToken);
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            activity.SetError(exception);
+            throw;
+        }
     }
 
     private static void MarkPublishFailure(

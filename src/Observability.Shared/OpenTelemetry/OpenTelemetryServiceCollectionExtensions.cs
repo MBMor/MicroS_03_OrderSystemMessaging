@@ -7,6 +7,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Microsoft.AspNetCore.Routing;
+using Observability.Shared.Tracing;
 
 namespace Observability.Shared.OpenTelemetry;
 
@@ -71,6 +72,12 @@ public static class OpenTelemetryServiceCollectionExtensions
             .WithTracing(tracing =>
             {
                 tracing
+                    .AddSource(
+                        OrderSystemActivitySources.OrdersName,
+                        OrderSystemActivitySources.InventoryName,
+                        OrderSystemActivitySources.NotificationsName,
+                        OrderSystemActivitySources.OutboxName,
+                        OrderSystemActivitySources.MessagingName)
                     .AddAspNetCoreInstrumentation(options =>
                     {
                         options.Filter = httpContext =>

@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using System.Diagnostics;
 using System.Text.Json;
 using FluentValidation;
 using InventoryService.Application.Common.Abstractions;
@@ -12,6 +13,7 @@ using InventoryService.Infrastructure.Outbox;
 using InventoryService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Observability.Shared.Tracing;
 using OrderSystem.Contracts.IntegrationEvents;
 
 namespace InventoryService.Infrastructure.StockReservations;
@@ -41,117 +43,165 @@ public sealed class StockReservationApplicationService(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var validationResult = await _validator.ValidateAsync(
-            command,
-            cancellationToken);
+        using var activity = OrderSystemActivitySources.Inventory.StartActivity(
+            "inventory.stock_reservation.process",
+            ActivityKind.Internal);
 
-        if (!validationResult.IsValid)
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OrderId,
+            command.OrderId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventId,
+            command.MessageId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            command.EventType);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OrderItemCount,
+            command.Items?.Count);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            command.CorrelationId);
+
+        try
         {
-            throw new ValidationException(validationResult.Errors);
-        }
-
-        _logger.LogInformation(
-            "Stock reservation processing started for order {OrderId}. MessageId: {MessageId}, EventType: {EventType}, ItemCount: {ItemCount}",
-            command.OrderId,
-            command.MessageId,
-            command.EventType,
-            command.Items?.Count ?? 0);
-
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-
-        var alreadyProcessed = await _dbContext.ProcessedMessages
-            .AnyAsync(
-                processedMessage =>
-                    processedMessage.MessageId == command.MessageId
-                    && processedMessage.EventType == command.EventType!
-                    && processedMessage.ConsumerName == ConsumerNames.InventoryOrderCreatedConsumer,
+            var validationResult = await _validator.ValidateAsync(
+                command,
                 cancellationToken);
 
-        if (alreadyProcessed)
-        {
+            if (!validationResult.IsValid)
+            {
+                throw new ValidationException(validationResult.Errors);
+            }
+
             _logger.LogInformation(
-                "Duplicate order created message {MessageId} skipped by {ConsumerName}",
-                command.MessageId,
-                ConsumerNames.InventoryOrderCreatedConsumer);
-
-            await transaction.CommitAsync(cancellationToken);
-            return;
-        }
-
-        var existingReservation = await _dbContext.StockReservations
-            .AsNoTracking()
-            .AnyAsync(
-                reservation => reservation.OrderId == command.OrderId,
-                cancellationToken);
-
-        if (existingReservation)
-        {
-            _logger.LogInformation(
-                "Stock reservation already exists for order {OrderId}. Message {MessageId} will be marked as processed",
+                "Stock reservation processing started for order {OrderId}. MessageId: {MessageId}, EventType: {EventType}, ItemCount: {ItemCount}",
                 command.OrderId,
-                command.MessageId);
+                command.MessageId,
+                command.EventType,
+                command.Items?.Count ?? 0);
+
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+
+            var alreadyProcessed = await _dbContext.ProcessedMessages
+                .AnyAsync(
+                    processedMessage =>
+                        processedMessage.MessageId == command.MessageId
+                        && processedMessage.EventType == command.EventType!
+                        && processedMessage.ConsumerName == ConsumerNames.InventoryOrderCreatedConsumer,
+                    cancellationToken);
+
+            if (alreadyProcessed)
+            {
+                activity.SetTagIfNotNull(
+                    "messaging.duplicate",
+                    true);
+
+                _logger.LogInformation(
+                    "Duplicate order created message {MessageId} skipped by {ConsumerName}",
+                    command.MessageId,
+                    ConsumerNames.InventoryOrderCreatedConsumer);
+
+                await transaction.CommitAsync(cancellationToken);
+
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                return;
+            }
+
+            var existingReservation = await _dbContext.StockReservations
+                .AsNoTracking()
+                .AnyAsync(
+                    reservation => reservation.OrderId == command.OrderId,
+                    cancellationToken);
+
+            if (existingReservation)
+            {
+                activity.SetTagIfNotNull(
+                    "stock.reservation.already_exists",
+                    true);
+
+                _logger.LogInformation(
+                    "Stock reservation already exists for order {OrderId}. Message {MessageId} will be marked as processed",
+                    command.OrderId,
+                    command.MessageId);
+
+                AddProcessedMessage(command);
+
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                activity?.SetStatus(ActivityStatusCode.Ok);
+                return;
+            }
+
+            var now = _clock.UtcNow;
+
+            var requestedItems = command.Items!
+                .GroupBy(item => item.ProductId)
+                .Select(group => new RequestedStockItem(
+                    ProductId: group.Key,
+                    Quantity: group.Sum(item => item.Quantity)))
+                .ToList();
+
+            var productIds = requestedItems
+                .Select(item => item.ProductId)
+                .ToList();
+
+            var inventoryItems = await _dbContext.InventoryItems
+                .Where(inventoryItem => productIds.Contains(inventoryItem.ProductId))
+                .ToListAsync(cancellationToken);
+
+            var inventoryItemsByProductId = inventoryItems.ToDictionary(
+                inventoryItem => inventoryItem.ProductId);
+
+            var failedItems = GetFailedItems(
+                requestedItems,
+                inventoryItemsByProductId);
+
+            if (failedItems.Count > 0)
+            {
+                await CreateFailedReservationAsync(
+                    command,
+                    requestedItems,
+                    failedItems,
+                    now,
+                    activity,
+                    cancellationToken);
+            }
+            else
+            {
+                await CreateSuccessfulReservationAsync(
+                    command,
+                    requestedItems,
+                    inventoryItemsByProductId,
+                    now,
+                    activity,
+                    cancellationToken);
+            }
 
             AddProcessedMessage(command);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return;
+
+            activity?.SetStatus(ActivityStatusCode.Ok);
+
+            _logger.LogInformation(
+                "Stock reservation processing completed for order {OrderId}. MessageId: {MessageId}",
+                command.OrderId,
+                command.MessageId);
         }
-
-        var now = _clock.UtcNow;
-
-        var requestedItems = command.Items!
-            .GroupBy(item => item.ProductId)
-            .Select(group => new RequestedStockItem(
-                ProductId: group.Key,
-                Quantity: group.Sum(item => item.Quantity)))
-            .ToList();
-
-        var productIds = requestedItems
-            .Select(item => item.ProductId)
-            .ToList();
-
-        var inventoryItems = await _dbContext.InventoryItems
-            .Where(inventoryItem => productIds.Contains(inventoryItem.ProductId))
-            .ToListAsync(cancellationToken);
-
-        var inventoryItemsByProductId = inventoryItems.ToDictionary(
-            inventoryItem => inventoryItem.ProductId);
-
-        var failedItems = GetFailedItems(
-            requestedItems,
-            inventoryItemsByProductId);
-
-        if (failedItems.Count > 0)
+        catch (Exception exception)
         {
-            await CreateFailedReservationAsync(
-                command,
-                requestedItems,
-                failedItems,
-                now,
-                cancellationToken);
+            activity.SetError(exception);
+            throw;
         }
-        else
-        {
-            await CreateSuccessfulReservationAsync(
-                command,
-                requestedItems,
-                inventoryItemsByProductId,
-                now,
-                cancellationToken);
-        }
-
-        AddProcessedMessage(command);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "Stock reservation processing completed for order {OrderId}. MessageId: {MessageId}",
-            command.OrderId,
-            command.MessageId);
     }
 
     private async Task CreateSuccessfulReservationAsync(
@@ -159,6 +209,7 @@ public sealed class StockReservationApplicationService(
         IReadOnlyCollection<RequestedStockItem> requestedItems,
         IReadOnlyDictionary<Guid, InventoryItem> inventoryItemsByProductId,
         DateTime now,
+        Activity? activity,
         CancellationToken cancellationToken)
     {
         foreach (var requestedItem in requestedItems)
@@ -207,6 +258,26 @@ public sealed class StockReservationApplicationService(
             integrationEvent,
             RabbitMqRoutingKeys.StockReserved);
 
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.ReservationId,
+            reservation.Id);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.ReservationStatus,
+            "Reserved");
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventId,
+            integrationEvent.EventId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            integrationEvent.EventType);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OutboxMessageId,
+            outboxMessage.Id);
+
         _logger.LogInformation(
             "Stock reservation succeeded for order {OrderId}. ReservationId: {ReservationId}, ReservedItemCount: {ReservedItemCount}, OutboxMessageId: {OutboxMessageId}, EventId: {EventId}, RoutingKey: {RoutingKey}",
             command.OrderId,
@@ -227,6 +298,7 @@ public sealed class StockReservationApplicationService(
         IReadOnlyCollection<RequestedStockItem> requestedItems,
         IReadOnlyCollection<StockReservationFailedItem> failedItems,
         DateTime now,
+        Activity? activity,
         CancellationToken cancellationToken)
     {
         var reservationId = Guid.NewGuid();
@@ -261,6 +333,30 @@ public sealed class StockReservationApplicationService(
         var outboxMessage = CreateOutboxMessage(
             integrationEvent,
             RabbitMqRoutingKeys.StockReservationFailed);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.ReservationId,
+            reservation.Id);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.ReservationStatus,
+            "Failed");
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.ReservationFailureReason,
+            InsufficientStockReason);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventId,
+            integrationEvent.EventId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            integrationEvent.EventType);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.OutboxMessageId,
+            outboxMessage.Id);
 
         _logger.LogWarning(
             "Stock reservation failed for order {OrderId}. ReservationId: {ReservationId}, FailedItemCount: {FailedItemCount}, OutboxMessageId: {OutboxMessageId}, EventId: {EventId}, RoutingKey: {RoutingKey}",

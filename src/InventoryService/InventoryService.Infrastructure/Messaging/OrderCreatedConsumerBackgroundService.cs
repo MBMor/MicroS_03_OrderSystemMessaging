@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using InventoryService.Application.StockReservations.Abstractions;
 using InventoryService.Application.StockReservations.Contracts;
@@ -6,11 +7,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Observability.Shared.Correlation;
+using Observability.Shared.Messaging;
+using Observability.Shared.Tracing;
 using OrderSystem.Contracts.IntegrationEvents;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using Observability.Shared.Correlation;
-using Observability.Shared.Messaging;
 
 namespace InventoryService.Infrastructure.Messaging;
 
@@ -58,16 +60,9 @@ public sealed class OrderCreatedConsumerBackgroundService(
                     "Inventory OrderCreated consumer failed. Retrying in {RetryDelaySeconds} second(s).",
                     _consumerOptions.ConnectionRetryDelaySeconds);
 
-                try
-                {
-                    await Task.Delay(
-                        TimeSpan.FromSeconds(_consumerOptions.ConnectionRetryDelaySeconds),
-                        stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
+                await Task.Delay(
+                    TimeSpan.FromSeconds(_consumerOptions.ConnectionRetryDelaySeconds),
+                    stoppingToken);
             }
         }
 
@@ -83,7 +78,7 @@ public sealed class OrderCreatedConsumerBackgroundService(
 
         await channel.BasicQosAsync(
             prefetchSize: 0,
-            prefetchCount: _consumerOptions.PrefetchCount,
+            prefetchCount: (ushort)_consumerOptions.PrefetchCount,
             global: false,
             cancellationToken: stoppingToken);
 
@@ -108,9 +103,7 @@ public sealed class OrderCreatedConsumerBackgroundService(
             _topologyOptions.OrderCreatedQueueName,
             _consumerOptions.PrefetchCount);
 
-        await Task.Delay(
-            Timeout.InfiniteTimeSpan,
-            stoppingToken);
+        await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
     }
 
     private async Task HandleMessageAsync(
@@ -120,6 +113,8 @@ public sealed class OrderCreatedConsumerBackgroundService(
     {
         var fallbackCorrelationId = RabbitMqMessageHeaders.GetCorrelationIdOrCreate(
             eventArgs.BasicProperties.Headers);
+
+        Activity? consumeActivity = null;
 
         try
         {
@@ -136,6 +131,11 @@ public sealed class OrderCreatedConsumerBackgroundService(
 
             using var correlationScope = CorrelationIdLogScope.Begin(
                 _logger,
+                correlationId);
+
+            consumeActivity = StartConsumeActivity(
+                eventArgs,
+                _topologyOptions.OrderCreatedQueueName,
                 correlationId);
 
             _logger.LogInformation(
@@ -175,6 +175,8 @@ public sealed class OrderCreatedConsumerBackgroundService(
                 multiple: false,
                 cancellationToken: cancellationToken);
 
+            consumeActivity?.SetStatus(ActivityStatusCode.Ok);
+
             _logger.LogInformation(
                 "OrderCreated message {MessageId} for order {OrderId} was processed and acknowledged. DeliveryTag: {DeliveryTag}, EventType: {EventType}, QueueName: {QueueName}, CorrelationId: {CorrelationId}",
                 command.MessageId,
@@ -190,6 +192,13 @@ public sealed class OrderCreatedConsumerBackgroundService(
         }
         catch (Exception exception)
         {
+            consumeActivity ??= StartConsumeActivity(
+                eventArgs,
+                _topologyOptions.OrderCreatedQueueName,
+                fallbackCorrelationId);
+
+            consumeActivity.SetError(exception);
+
             using var correlationScope = CorrelationIdLogScope.Begin(
                 _logger,
                 fallbackCorrelationId);
@@ -211,6 +220,10 @@ public sealed class OrderCreatedConsumerBackgroundService(
                 requeue: false,
                 cancellationToken: cancellationToken);
         }
+        finally
+        {
+            consumeActivity?.Dispose();
+        }
     }
 
     private static ReserveStockForOrderCommand CreateCommand(
@@ -218,24 +231,24 @@ public sealed class OrderCreatedConsumerBackgroundService(
     {
         var json = Encoding.UTF8.GetString(eventArgs.Body.Span);
 
-        var orderCreated = JsonSerializer.Deserialize<OrderCreated>(
+        var integrationEvent = JsonSerializer.Deserialize<OrderCreated>(
             json,
             JsonSerializerOptions);
 
-        if (orderCreated is null)
+        if (integrationEvent is null)
         {
-            throw new JsonException("OrderCreated message payload could not be deserialized.");
+            throw new InvalidOperationException("OrderCreated message payload could not be deserialized.");
         }
 
         return new ReserveStockForOrderCommand
         {
-            MessageId = GetMessageId(eventArgs, orderCreated),
-            EventType = orderCreated.EventType,
-            CorrelationId = orderCreated.CorrelationId,
-            OrderId = orderCreated.OrderId,
-            CustomerName = orderCreated.CustomerName,
-            CustomerEmail = orderCreated.CustomerEmail,
-            Items = orderCreated.Items
+            MessageId = integrationEvent.EventId,
+            EventType = integrationEvent.EventType,
+            CorrelationId = integrationEvent.CorrelationId,
+            OrderId = integrationEvent.OrderId,
+            CustomerName = integrationEvent.CustomerName,
+            CustomerEmail = integrationEvent.CustomerEmail,
+            Items = integrationEvent.Items
                 .Select(item => new ReserveStockForOrderItemCommand
                 {
                     ProductId = item.ProductId,
@@ -245,18 +258,51 @@ public sealed class OrderCreatedConsumerBackgroundService(
         };
     }
 
-    private static Guid GetMessageId(
+    private static Activity? StartConsumeActivity(
         BasicDeliverEventArgs eventArgs,
-        OrderCreated orderCreated)
+        string queueName,
+        string correlationId)
     {
-        var messageId = eventArgs.BasicProperties.MessageId;
+        var activity = OrderSystemActivitySources.Messaging.StartActivity(
+            "rabbitmq.consume",
+            ActivityKind.Consumer);
 
-        if (!string.IsNullOrWhiteSpace(messageId)
-            && Guid.TryParse(messageId, out var parsedMessageId))
-        {
-            return parsedMessageId;
-        }
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingSystem,
+            "rabbitmq");
 
-        return orderCreated.EventId;
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingOperation,
+            "consume");
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingMessageId,
+            eventArgs.BasicProperties.MessageId);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.EventType,
+            eventArgs.BasicProperties.Type);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqQueueName,
+            queueName);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqRoutingKey,
+            eventArgs.RoutingKey);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqDeliveryTag,
+            eventArgs.DeliveryTag);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.MessagingRabbitMqRedelivered,
+            eventArgs.Redelivered);
+
+        activity.SetTagIfNotNull(
+            OrderSystemActivityTagNames.CorrelationId,
+            correlationId);
+
+        return activity;
     }
 }
