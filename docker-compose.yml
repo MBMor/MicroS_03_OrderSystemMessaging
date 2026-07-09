@@ -18,6 +18,10 @@ services:
       HealthChecks__InventoryApiReadyUrl: http://inventory-api:8080/health/ready
       HealthChecks__NotificationsApiReadyUrl: http://notifications-api:8080/health/ready
       HealthChecks__KeycloakRealmUrl: http://keycloak:8080/realms/order-system
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      Observability__EnvironmentName: "local"
+      Observability__ServiceVersion: "1.0.0"
     depends_on:
       orders-api:
         condition: service_healthy
@@ -26,6 +30,8 @@ services:
       notifications-api:
         condition: service_healthy
       keycloak:
+        condition: service_started
+      aspire-dashboard:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health/ready > /dev/null || exit 1"]
@@ -56,12 +62,18 @@ services:
       RabbitMQ__UserName: guest
       RabbitMQ__Password: guest
       RabbitMQ__ExchangeName: ordersystem.events
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      Observability__EnvironmentName: "local"
+      Observability__ServiceVersion: "1.0.0"
     depends_on:
       orders-db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       keycloak:
+        condition: service_started
+      aspire-dashboard:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health/ready > /dev/null || exit 1"]
@@ -92,12 +104,18 @@ services:
       RabbitMQ__UserName: guest
       RabbitMQ__Password: guest
       RabbitMQ__ExchangeName: ordersystem.events
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      Observability__EnvironmentName: "local"
+      Observability__ServiceVersion: "1.0.0"
     depends_on:
       inventory-db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       keycloak:
+        condition: service_started
+      aspire-dashboard:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health/ready > /dev/null || exit 1"]
@@ -128,12 +146,18 @@ services:
       RabbitMQ__UserName: guest
       RabbitMQ__Password: guest
       RabbitMQ__ExchangeName: ordersystem.events
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://aspire-dashboard:18889"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      Observability__EnvironmentName: "local"
+      Observability__ServiceVersion: "1.0.0"
     depends_on:
       notifications-db:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       keycloak:
+        condition: service_started
+      aspire-dashboard:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8080/health/ready > /dev/null || exit 1"]

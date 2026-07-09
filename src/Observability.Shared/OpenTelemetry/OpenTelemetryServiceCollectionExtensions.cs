@@ -6,6 +6,7 @@ using Observability.Shared.Configuration;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Microsoft.AspNetCore.Routing;
 
 namespace Observability.Shared.OpenTelemetry;
 
@@ -74,6 +75,24 @@ public static class OpenTelemetryServiceCollectionExtensions
                     {
                         options.Filter = httpContext =>
                             !IsHealthCheckRequest(httpContext);
+
+                        options.EnrichWithHttpResponse = (activity, response) =>
+                        {
+                            var normalizedRoute = GetNormalizedHttpRoute(
+                                response.HttpContext);
+
+                            if (normalizedRoute is null)
+                            {
+                                return;
+                            }
+
+                            activity.DisplayName =
+                                $"{response.HttpContext.Request.Method} {normalizedRoute}";
+
+                            activity.SetTag(
+                                "http.route",
+                                normalizedRoute);
+                        };
                     })
                     .AddHttpClientInstrumentation()
                     .AddOtlpExporter();
@@ -93,6 +112,54 @@ public static class OpenTelemetryServiceCollectionExtensions
         return httpContext.Request.Path.StartsWithSegments(
             "/health",
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetNormalizedHttpRoute(HttpContext httpContext)
+    {
+        if (httpContext.GetEndpoint() is not RouteEndpoint routeEndpoint)
+        {
+            return null;
+        }
+
+        var routePattern = routeEndpoint.RoutePattern.RawText;
+
+        if (string.IsNullOrWhiteSpace(routePattern))
+        {
+            return null;
+        }
+
+        return ReplaceApiVersionToken(
+            routePattern,
+            httpContext);
+    }
+
+    private static string ReplaceApiVersionToken(
+        string routePattern,
+        HttpContext httpContext)
+    {
+        if (!httpContext.Request.RouteValues.TryGetValue(
+                "version",
+                out var versionValue))
+        {
+            return routePattern;
+        }
+
+        var version = versionValue?.ToString();
+
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return routePattern;
+        }
+
+        return routePattern
+            .Replace(
+                "{version:apiVersion}",
+                version,
+                StringComparison.OrdinalIgnoreCase)
+            .Replace(
+                "{version}",
+                version,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetValueOrDefault(
