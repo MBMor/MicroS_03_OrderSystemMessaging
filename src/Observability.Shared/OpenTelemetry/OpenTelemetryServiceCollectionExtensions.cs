@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Observability.Shared.Configuration;
@@ -66,18 +67,30 @@ public static class OpenTelemetryServiceCollectionExtensions
                             resolvedEnvironmentName)
                     ]);
             })
-            .WithTracing(_ =>
+            .WithTracing(tracing =>
             {
-                // Instrumentations will be added in later 
-                // custom ActivitySource instrumentation.
+                tracing
+                    .AddAspNetCoreInstrumentation(options =>
+                    {
+                        options.Filter = httpContext =>
+                            !IsHealthCheckRequest(httpContext);
+                    })
+                    .AddHttpClientInstrumentation();
             })
-            .WithMetrics(_ =>
+            .WithMetrics(metrics =>
             {
-                // Instrumentations will be added in later.
-                // custom Meter/business metrics.
+                metrics
+                    .AddRuntimeInstrumentation();
             });
 
         return services;
+    }
+
+    private static bool IsHealthCheckRequest(HttpContext httpContext)
+    {
+        return httpContext.Request.Path.StartsWithSegments(
+            "/health",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetValueOrDefault(
