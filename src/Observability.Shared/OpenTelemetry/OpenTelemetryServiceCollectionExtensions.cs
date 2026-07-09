@@ -75,12 +75,14 @@ public static class OpenTelemetryServiceCollectionExtensions
                         options.Filter = httpContext =>
                             !IsHealthCheckRequest(httpContext);
                     })
-                    .AddHttpClientInstrumentation();
+                    .AddHttpClientInstrumentation()
+                    .AddOtlpExporter();
             })
             .WithMetrics(metrics =>
             {
                 metrics
-                    .AddRuntimeInstrumentation();
+                    .AddRuntimeInstrumentation()
+                    .AddOtlpExporter();
             });
 
         return services;
