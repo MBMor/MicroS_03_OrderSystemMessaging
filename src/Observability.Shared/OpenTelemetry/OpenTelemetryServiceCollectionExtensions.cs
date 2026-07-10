@@ -1,13 +1,14 @@
 ﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Observability.Shared.Configuration;
+using Observability.Shared.Metrics;
+using Observability.Shared.Tracing;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
-using Microsoft.AspNetCore.Routing;
-using Observability.Shared.Tracing;
 
 namespace Observability.Shared.OpenTelemetry;
 
@@ -107,6 +108,12 @@ public static class OpenTelemetryServiceCollectionExtensions
             .WithMetrics(metrics =>
             {
                 metrics
+                    .AddMeter(
+                        OrderSystemMeterNames.OrdersName,
+                        OrderSystemMeterNames.InventoryName,
+                        OrderSystemMeterNames.NotificationsName,
+                        OrderSystemMeterNames.OutboxName,
+                        OrderSystemMeterNames.MessagingName)
                     .AddRuntimeInstrumentation()
                     .AddOtlpExporter();
             });
