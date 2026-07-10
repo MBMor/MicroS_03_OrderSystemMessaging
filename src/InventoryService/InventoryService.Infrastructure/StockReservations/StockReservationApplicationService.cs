@@ -16,6 +16,7 @@ using Microsoft.Extensions.Logging;
 using Observability.Shared.Tracing;
 using OrderSystem.Contracts.IntegrationEvents;
 using Observability.Shared.Messaging;
+using Observability.Shared.Metrics;
 
 namespace InventoryService.Infrastructure.StockReservations;
 
@@ -165,7 +166,9 @@ public sealed class StockReservationApplicationService(
                 requestedItems,
                 inventoryItemsByProductId);
 
-            if (failedItems.Count > 0)
+            var reservationFailed = failedItems.Count > 0;
+
+            if (reservationFailed)
             {
                 await CreateFailedReservationAsync(
                     command,
@@ -190,6 +193,16 @@ public sealed class StockReservationApplicationService(
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            if (reservationFailed)
+            {
+                OrderSystemBusinessMetrics.RecordInventoryStockReservationFailed(
+                    InsufficientStockReason);
+            }
+            else
+            {
+                OrderSystemBusinessMetrics.RecordInventoryStockReserved();
+            }
 
             activity?.SetStatus(ActivityStatusCode.Ok);
 

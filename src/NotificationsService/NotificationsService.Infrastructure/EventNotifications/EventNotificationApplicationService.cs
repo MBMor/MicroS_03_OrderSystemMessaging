@@ -10,6 +10,7 @@ using NotificationsService.Infrastructure.Idempotency;
 using NotificationsService.Infrastructure.Messaging;
 using NotificationsService.Infrastructure.Persistence;
 using Observability.Shared.Tracing;
+using Observability.Shared.Metrics;
 
 namespace NotificationsService.Infrastructure.EventNotifications;
 
@@ -120,6 +121,12 @@ public sealed class EventNotificationApplicationService(
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
+            if (notificationId is not null)
+            {
+                OrderSystemBusinessMetrics.RecordNotificationCreated(
+                    command.EventType);
+            }
+
             activity?.SetStatus(ActivityStatusCode.Ok);
 
             _logger.LogInformation(
@@ -227,6 +234,12 @@ public sealed class EventNotificationApplicationService(
             await transaction.CommitAsync(cancellationToken);
 
             activity?.SetStatus(ActivityStatusCode.Ok);
+
+            if (notificationId is not null)
+            {
+                OrderSystemBusinessMetrics.RecordNotificationCreated(
+                    command.EventType);
+            }
 
             _logger.LogInformation(
                 "Stock reserved notification processing completed for order {OrderId}. MessageId: {MessageId}",
@@ -336,6 +349,12 @@ public sealed class EventNotificationApplicationService(
 
             await _dbContext.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            if (notificationId is not null)
+            {
+                OrderSystemBusinessMetrics.RecordNotificationCreated(
+                    command.EventType);
+            }
 
             activity?.SetStatus(ActivityStatusCode.Ok);
 

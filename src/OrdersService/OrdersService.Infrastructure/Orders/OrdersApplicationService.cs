@@ -15,6 +15,7 @@ using OrdersService.Infrastructure.Outbox;
 using OrdersService.Infrastructure.Persistence;
 using OrderSystem.Contracts.IntegrationEvents;
 using Observability.Shared.Messaging;
+using Observability.Shared.Metrics;
 
 namespace OrdersService.Infrastructure.Orders;
 
@@ -158,6 +159,8 @@ public sealed class OrdersApplicationService(
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
+
+            OrderSystemBusinessMetrics.RecordOrderCreated(order.Status.ToString());
 
             activity?.SetStatus(ActivityStatusCode.Ok);
 

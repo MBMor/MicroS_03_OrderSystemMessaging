@@ -14,6 +14,7 @@ using OpenTelemetry;
 using OrderSystem.Contracts.IntegrationEvents;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using Observability.Shared.Metrics;
 
 namespace InventoryService.Infrastructure.Messaging;
 
@@ -183,6 +184,11 @@ public sealed class OrderCreatedConsumerBackgroundService(
                 deliveryTag: eventArgs.DeliveryTag,
                 multiple: false,
                 cancellationToken: cancellationToken);
+
+            OrderSystemMessagingMetrics.RecordConsumed(
+                _topologyOptions.OrderCreatedQueueName,
+                eventArgs.RoutingKey,
+                command.EventType);
 
             consumeActivity?.SetStatus(ActivityStatusCode.Ok);
 

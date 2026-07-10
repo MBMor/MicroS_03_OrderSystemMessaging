@@ -14,6 +14,7 @@ using OrdersService.Application.StockReservations.Abstractions;
 using OrdersService.Application.StockReservations.Contracts;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using Observability.Shared.Metrics;
 
 namespace OrdersService.Infrastructure.Messaging;
 
@@ -182,6 +183,11 @@ public sealed class StockReservationFailedConsumerBackgroundService(
                 deliveryTag: eventArgs.DeliveryTag,
                 multiple: false,
                 cancellationToken: cancellationToken);
+
+            OrderSystemMessagingMetrics.RecordConsumed(
+                _topologyOptions.StockReservationFailedQueueName,
+                eventArgs.RoutingKey,
+                command.EventType);
 
             consumeActivity?.SetStatus(ActivityStatusCode.Ok);
 

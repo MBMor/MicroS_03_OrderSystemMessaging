@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using Observability.Shared.Messaging;
 using Observability.Shared.Tracing;
 using RabbitMQ.Client;
+using Observability.Shared.Metrics;
 
 namespace InventoryService.Infrastructure.Outbox;
 
@@ -209,6 +210,11 @@ public sealed class InventoryOutboxPublisherBackgroundService(
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
+            OrderSystemOutboxMetrics.RecordPublished(
+                outboxMessage.EventType,
+                outboxMessage.RoutingKey,
+                outboxMessage.Status.ToString());
+
             activity.SetTagIfNotNull(
                 OrderSystemActivityTagNames.OutboxMessageStatus,
                 outboxMessage.Status.ToString());
@@ -233,6 +239,23 @@ public sealed class InventoryOutboxPublisherBackgroundService(
                 _outboxPublisherOptions.MaxRetryCount);
 
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            if (outboxMessage.Status == OutboxStatus.Failed)
+            {
+                OrderSystemOutboxMetrics.RecordFailed(
+                    outboxMessage.EventType,
+                    outboxMessage.RoutingKey,
+                    outboxMessage.Status.ToString(),
+                    exception);
+            }
+            else
+            {
+                OrderSystemOutboxMetrics.RecordRetried(
+                    outboxMessage.EventType,
+                    outboxMessage.RoutingKey,
+                    outboxMessage.Status.ToString(),
+                    exception);
+            }
 
             activity.SetTagIfNotNull(
                 OrderSystemActivityTagNames.OutboxMessageStatus,
@@ -333,6 +356,11 @@ public sealed class InventoryOutboxPublisherBackgroundService(
                 basicProperties: properties,
                 body: body,
                 cancellationToken: cancellationToken);
+
+            OrderSystemMessagingMetrics.RecordPublished(
+                _rabbitMqOptions.ExchangeName,
+                outboxMessage.RoutingKey,
+                outboxMessage.EventType);
 
             activity?.SetStatus(ActivityStatusCode.Ok);
         }

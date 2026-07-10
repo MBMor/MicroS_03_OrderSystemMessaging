@@ -11,6 +11,7 @@ using OrdersService.Domain.Orders;
 using OrdersService.Infrastructure.Idempotency;
 using OrdersService.Infrastructure.Messaging;
 using OrdersService.Infrastructure.Persistence;
+using Observability.Shared.Metrics;
 
 namespace OrdersService.Infrastructure.StockReservations;
 
@@ -128,6 +129,8 @@ public sealed class OrderStockReservationResultApplicationService(
                 await _dbContext.SaveChangesAsync(cancellationToken);
 
                 await transaction.CommitAsync(cancellationToken);
+
+                OrderSystemBusinessMetrics.RecordOrderStockReserved(order.Status.ToString());
 
                 activity?.SetStatus(ActivityStatusCode.Ok);
                 return;
@@ -294,6 +297,10 @@ public sealed class OrderStockReservationResultApplicationService(
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
+
+            OrderSystemBusinessMetrics.RecordOrderStockReservationFailed(
+                order.Status.ToString(),
+                command.Reason);
 
             activity?.SetStatus(ActivityStatusCode.Ok);
         }

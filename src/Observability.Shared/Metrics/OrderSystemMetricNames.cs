@@ -13,6 +13,7 @@ public static class OrderSystemMetricNames
 
     public const string OutboxMessagesPublishedTotal = "outbox.messages.published.total";
     public const string OutboxMessagesFailedTotal = "outbox.messages.failed.total";
+    public const string OutboxMessagesRetriedTotal = "outbox.messages.retried.total";
     public const string OutboxPublishDurationMilliseconds = "outbox.publish.duration.ms";
 
     public const string RabbitMqMessagesPublishedTotal = "rabbitmq.messages.published.total";
