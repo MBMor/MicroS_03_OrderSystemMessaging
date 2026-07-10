@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using Observability.Shared.Correlation;
 using Observability.Shared.Messaging;
 using Observability.Shared.Tracing;
+using OpenTelemetry;
 using OrderSystem.Contracts.IntegrationEvents;
 using OrdersService.Application.StockReservations.Abstractions;
 using OrdersService.Application.StockReservations.Contracts;
@@ -114,6 +115,8 @@ public sealed class StockReservedConsumerBackgroundService(
         var fallbackCorrelationId = RabbitMqMessageHeaders.GetCorrelationIdOrCreate(
             eventArgs.BasicProperties.Headers);
 
+        var previousBaggage = Baggage.Current;
+
         Activity? consumeActivity = null;
 
         try
@@ -129,6 +132,11 @@ public sealed class StockReservedConsumerBackgroundService(
                 CorrelationId = correlationId
             };
 
+            var parentContext = RabbitMqTraceContextHeaders.Extract(
+                eventArgs.BasicProperties.Headers);
+
+            Baggage.Current = parentContext.Baggage;
+
             using var correlationScope = CorrelationIdLogScope.Begin(
                 _logger,
                 correlationId);
@@ -136,7 +144,8 @@ public sealed class StockReservedConsumerBackgroundService(
             consumeActivity = StartConsumeActivity(
                 eventArgs,
                 _topologyOptions.StockReservedQueueName,
-                correlationId);
+                correlationId,
+                parentContext.ActivityContext);
 
             _logger.LogInformation(
                 "StockReserved message received. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}",
@@ -191,10 +200,14 @@ public sealed class StockReservedConsumerBackgroundService(
         }
         catch (Exception exception)
         {
+            var fallbackParentContext = RabbitMqTraceContextHeaders.Extract(
+                eventArgs.BasicProperties.Headers);
+
             consumeActivity ??= StartConsumeActivity(
                 eventArgs,
                 _topologyOptions.StockReservedQueueName,
-                fallbackCorrelationId);
+                fallbackCorrelationId,
+                fallbackParentContext.ActivityContext);
 
             consumeActivity.SetError(exception);
 
@@ -222,6 +235,7 @@ public sealed class StockReservedConsumerBackgroundService(
         finally
         {
             consumeActivity?.Dispose();
+            Baggage.Current = previousBaggage;
         }
     }
 
@@ -251,11 +265,17 @@ public sealed class StockReservedConsumerBackgroundService(
     private static Activity? StartConsumeActivity(
         BasicDeliverEventArgs eventArgs,
         string queueName,
-        string correlationId)
+        string correlationId,
+        ActivityContext parentContext)
     {
-        var activity = OrderSystemActivitySources.Messaging.StartActivity(
-            "rabbitmq.consume",
-            ActivityKind.Consumer);
+        var activity = parentContext.TraceId != default
+            ? OrderSystemActivitySources.Messaging.StartActivity(
+                "rabbitmq.consume",
+                ActivityKind.Consumer,
+                parentContext)
+            : OrderSystemActivitySources.Messaging.StartActivity(
+                "rabbitmq.consume",
+                ActivityKind.Consumer);
 
         activity.SetTagIfNotNull(
             OrderSystemActivityTagNames.MessagingSystem,

@@ -15,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Observability.Shared.Tracing;
 using OrderSystem.Contracts.IntegrationEvents;
+using Observability.Shared.Messaging;
 
 namespace InventoryService.Infrastructure.StockReservations;
 
@@ -430,13 +431,17 @@ public sealed class StockReservationApplicationService(
             integrationEvent.GetType(),
             JsonSerializerOptions);
 
+        var traceContext = RabbitMqTraceContextHeaders.CaptureCurrent();
+
         return new OutboxMessage(
             id: Guid.NewGuid(),
             eventId: integrationEvent.EventId,
             eventType: integrationEvent.EventType,
             routingKey: routingKey,
             payload: payload,
-            occurredAtUtc: integrationEvent.OccurredAtUtc);
+            occurredAtUtc: integrationEvent.OccurredAtUtc,
+            traceParent: traceContext.TraceParent,
+            traceState: traceContext.TraceState);
     }
 
     private sealed record RequestedStockItem(

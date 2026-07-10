@@ -31,6 +31,12 @@ public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outbox
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
+        builder.Property(outboxMessage => outboxMessage.TraceParent)
+            .HasMaxLength(OutboxMessage.TraceParentMaxLength);
+
+        builder.Property(outboxMessage => outboxMessage.TraceState)
+            .HasMaxLength(OutboxMessage.TraceStateMaxLength);
+
         builder.Property(outboxMessage => outboxMessage.ProcessedAtUtc)
             .HasColumnType("timestamp with time zone");
 

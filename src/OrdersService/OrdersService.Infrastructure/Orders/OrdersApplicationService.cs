@@ -14,6 +14,7 @@ using OrdersService.Infrastructure.Messaging;
 using OrdersService.Infrastructure.Outbox;
 using OrdersService.Infrastructure.Persistence;
 using OrderSystem.Contracts.IntegrationEvents;
+using Observability.Shared.Messaging;
 
 namespace OrdersService.Infrastructure.Orders;
 
@@ -107,13 +108,17 @@ public sealed class OrdersApplicationService(
                 orderCreatedEvent,
                 JsonSerializerOptions);
 
+            var traceContext = RabbitMqTraceContextHeaders.CaptureCurrent();
+
             var outboxMessage = new OutboxMessage(
                 id: Guid.NewGuid(),
                 eventId: orderCreatedEvent.EventId,
                 eventType: orderCreatedEvent.EventType,
                 routingKey: RabbitMqRoutingKeys.OrderCreated,
                 payload: payload,
-                occurredAtUtc: orderCreatedEvent.OccurredAtUtc);
+                occurredAtUtc: orderCreatedEvent.OccurredAtUtc,
+                traceParent: traceContext.TraceParent,
+                traceState: traceContext.TraceState);
 
             activity.SetTagIfNotNull(
                 OrderSystemActivityTagNames.EventId,

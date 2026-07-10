@@ -150,9 +150,18 @@ public sealed class OrdersOutboxPublisherBackgroundService(
         var correlationId = RabbitMqMessageHeaders.GetCorrelationIdFromJsonPayload(
             outboxMessage.Payload);
 
-        using var activity = OrderSystemActivitySources.Outbox.StartActivity(
-            "outbox.publish_message",
-            ActivityKind.Internal);
+        var parentContext = RabbitMqTraceContextHeaders.Extract(
+            outboxMessage.TraceParent,
+            outboxMessage.TraceState);
+
+        using var activity = parentContext.ActivityContext.TraceId != default
+            ? OrderSystemActivitySources.Outbox.StartActivity(
+                "outbox.publish_message",
+                ActivityKind.Internal,
+                parentContext.ActivityContext)
+            : OrderSystemActivitySources.Outbox.StartActivity(
+                "outbox.publish_message",
+                ActivityKind.Internal);
 
         activity.SetTagIfNotNull(
             OrderSystemActivityTagNames.OutboxMessageId,
@@ -272,15 +281,6 @@ public sealed class OrdersOutboxPublisherBackgroundService(
                 RabbitMqMessageHeaders.CorrelationIdHeaderName);
         }
 
-        var properties = new BasicProperties
-        {
-            Persistent = true,
-            ContentType = "application/json",
-            MessageId = outboxMessage.EventId.ToString(),
-            Type = outboxMessage.EventType,
-            Headers = headers
-        };
-
         using var activity = OrderSystemActivitySources.Messaging.StartActivity(
             "rabbitmq.publish",
             ActivityKind.Producer);
@@ -312,6 +312,17 @@ public sealed class OrdersOutboxPublisherBackgroundService(
         activity.SetTagIfNotNull(
             OrderSystemActivityTagNames.CorrelationId,
             correlationId);
+
+        RabbitMqTraceContextHeaders.InjectCurrent(headers);
+
+        var properties = new BasicProperties
+        {
+            Persistent = true,
+            ContentType = "application/json",
+            MessageId = outboxMessage.EventId.ToString(),
+            Type = outboxMessage.EventType,
+            Headers = headers
+        };
 
         try
         {

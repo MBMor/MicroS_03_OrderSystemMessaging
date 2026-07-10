@@ -4,6 +4,8 @@ public sealed class OutboxMessage
 {
     public const int EventTypeMaxLength = 200;
     public const int RoutingKeyMaxLength = 200;
+    public const int TraceParentMaxLength = 200;
+    public const int TraceStateMaxLength = 512;
     public const int LastErrorMaxLength = 4000;
 
     private OutboxMessage()
@@ -19,7 +21,9 @@ public sealed class OutboxMessage
         string eventType,
         string routingKey,
         string payload,
-        DateTime occurredAtUtc)
+        DateTime occurredAtUtc,
+        string? traceParent = null,
+        string? traceState = null)
     {
         if (id == Guid.Empty)
         {
@@ -62,6 +66,8 @@ public sealed class OutboxMessage
         RoutingKey = routingKey.Trim();
         Payload = payload;
         OccurredAtUtc = EnsureUtc(occurredAtUtc);
+        TraceParent = NormalizeNullable(traceParent, TraceParentMaxLength, nameof(traceParent));
+        TraceState = NormalizeNullable(traceState, TraceStateMaxLength, nameof(traceState));
         Status = OutboxStatus.Pending;
     }
 
@@ -76,6 +82,10 @@ public sealed class OutboxMessage
     public string Payload { get; private set; }
 
     public DateTime OccurredAtUtc { get; private set; }
+
+    public string? TraceParent { get; private set; }
+
+    public string? TraceState { get; private set; }
 
     public DateTime? ProcessedAtUtc { get; private set; }
 
@@ -118,6 +128,28 @@ public sealed class OutboxMessage
         return normalized.Length <= LastErrorMaxLength
             ? normalized
             : normalized[..LastErrorMaxLength];
+    }
+
+    private static string? NormalizeNullable(
+        string? value,
+        int maxLength,
+        string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = value.Trim();
+
+        if (normalized.Length > maxLength)
+        {
+            throw new ArgumentException(
+                $"{parameterName} must not exceed {maxLength} characters.",
+                parameterName);
+        }
+
+        return normalized;
     }
 
     private static DateTime EnsureUtc(DateTime dateTime)
