@@ -18,6 +18,13 @@ public static class OpenTelemetryServiceCollectionExtensions
     private const string ServiceDisplayNameAttributeName = "service.display_name";
     private const string DeploymentEnvironmentAttributeName = "deployment.environment";
 
+    private static readonly string[] HealthCheckPathPrefixes =
+    [
+        "/health",
+        "/health/live",
+        "/health/ready"
+    ];
+
     public static IServiceCollection AddOrderSystemOpenTelemetry(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -102,7 +109,11 @@ public static class OpenTelemetryServiceCollectionExtensions
                                 normalizedRoute);
                         };
                     })
-                    .AddHttpClientInstrumentation()
+                    .AddHttpClientInstrumentation(options =>
+                    {
+                        options.FilterHttpRequestMessage = request =>
+                            !IsHealthCheckRequest(request);
+                    })
                     .AddOtlpExporter();
             })
             .WithMetrics(metrics =>
@@ -123,9 +134,50 @@ public static class OpenTelemetryServiceCollectionExtensions
 
     private static bool IsHealthCheckRequest(HttpContext httpContext)
     {
-        return httpContext.Request.Path.StartsWithSegments(
-            "/health",
-            StringComparison.OrdinalIgnoreCase);
+        return IsHealthCheckPath(
+            httpContext.Request.Path);
+    }
+
+    private static bool IsHealthCheckRequest(HttpRequestMessage request)
+    {
+        var path = request.RequestUri?.AbsolutePath;
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        return IsHealthCheckPath(path);
+    }
+
+    private static bool IsHealthCheckPath(PathString path)
+    {
+        foreach (var healthCheckPathPrefix in HealthCheckPathPrefixes)
+        {
+            if (path.StartsWithSegments(
+                    healthCheckPathPrefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsHealthCheckPath(string path)
+    {
+        foreach (var healthCheckPathPrefix in HealthCheckPathPrefixes)
+        {
+            if (path.StartsWith(
+                    healthCheckPathPrefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string? GetNormalizedHttpRoute(HttpContext httpContext)
