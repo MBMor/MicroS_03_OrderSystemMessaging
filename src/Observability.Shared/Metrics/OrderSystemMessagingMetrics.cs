@@ -23,6 +23,12 @@ public static class OrderSystemMessagingMetrics
             unit: "{message}",
             description: "Number of RabbitMQ messages that failed during processing.");
 
+    private static readonly Counter<long> RabbitMqMessagesDeadLetteredTotal =
+        OrderSystemMeters.Messaging.CreateCounter<long>(
+            name: OrderSystemMetricNames.RabbitMqMessagesDeadLetteredTotal,
+            unit: "{message}",
+            description: "Number of RabbitMQ messages negatively acknowledged and sent to a dead-letter queue.");
+
     private static readonly Histogram<double> RabbitMqConsumeDurationMilliseconds =
         OrderSystemMeters.Messaging.CreateHistogram<double>(
             name: OrderSystemMetricNames.RabbitMqConsumeDurationMilliseconds,
@@ -71,6 +77,29 @@ public static class OrderSystemMessagingMetrics
             OrderSystemMetricTagHelper.Normalize(exception));
 
         RabbitMqMessagesFailedTotal.Add(1, tags);
+    }
+
+    public static void RecordDeadLettered(
+        string? queueName,
+        string? deadLetterQueueName,
+        string? routingKey,
+        string? eventType,
+        Exception exception)
+    {
+        var tags = CreateConsumeTags(
+            queueName,
+            routingKey,
+            eventType);
+
+        tags.Add(
+            OrderSystemMetricTagNames.MessagingRabbitMqDeadLetterQueueName,
+            OrderSystemMetricTagHelper.Normalize(deadLetterQueueName));
+
+        tags.Add(
+            OrderSystemMetricTagNames.ErrorType,
+            OrderSystemMetricTagHelper.Normalize(exception));
+
+        RabbitMqMessagesDeadLetteredTotal.Add(1, tags);
     }
 
     public static void RecordConsumeDuration(

@@ -22,6 +22,7 @@ public static class OrderSystemMetricTagNames
     public const string MessagingDestinationName = "messaging.destination.name";
     public const string MessagingRabbitMqRoutingKey = "messaging.rabbitmq.routing_key";
     public const string MessagingRabbitMqQueueName = "messaging.rabbitmq.queue.name";
+    public const string MessagingRabbitMqDeadLetterQueueName = "messaging.rabbitmq.dead_letter_queue.name";
 
     public const string ErrorType = "error.type";
 }

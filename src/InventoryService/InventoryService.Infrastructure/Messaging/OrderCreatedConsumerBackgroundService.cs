@@ -233,14 +233,27 @@ public sealed class OrderCreatedConsumerBackgroundService(
                 _logger,
                 fallbackCorrelationId);
 
+            const string message =
+                "OrderCreated message failed and will be dead-lettered. " +
+                "DeliveryTag: {DeliveryTag}, " +
+                "MessageId: {MessageId}, " +
+                "EventType: {EventType}, " +
+                "RoutingKey: {RoutingKey}, " +
+                "QueueName: {QueueName}, " +
+                "DeadLetterQueueName: {DeadLetterQueueName}, " +
+                "Redelivered: {Redelivered}, " +
+                "CorrelationId: {CorrelationId}, " +
+                "ErrorType: {ErrorType}";
+
             _logger.LogError(
                 exception,
-                "OrderCreated message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}, ErrorType: {ErrorType}",
+                message,
                 eventArgs.DeliveryTag,
                 eventArgs.BasicProperties.MessageId,
                 eventArgs.BasicProperties.Type,
                 eventArgs.RoutingKey,
                 _topologyOptions.OrderCreatedQueueName,
+                _topologyOptions.OrderCreatedDeadLetterQueueName,
                 eventArgs.Redelivered,
                 fallbackCorrelationId,
                 ExceptionLogHelper.GetErrorType(exception));
@@ -257,6 +270,17 @@ public sealed class OrderCreatedConsumerBackgroundService(
                 eventArgs.RoutingKey,
                 eventArgs.BasicProperties.Type,
                 OrderSystemMetricTagValues.Failure);
+
+            consumeActivity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.MessagingRabbitMqDeadLetterQueueName,
+                _topologyOptions.OrderCreatedDeadLetterQueueName);
+
+            OrderSystemMessagingMetrics.RecordDeadLettered(
+                _topologyOptions.OrderCreatedQueueName,
+                _topologyOptions.OrderCreatedDeadLetterQueueName,
+                eventArgs.RoutingKey,
+                eventArgs.BasicProperties.Type,
+                exception);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,

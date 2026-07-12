@@ -30,6 +30,7 @@ public static class OrderSystemActivityTagNames
     public const string MessagingMessageId = "messaging.message.id";
     public const string MessagingRabbitMqRoutingKey = "messaging.rabbitmq.routing_key";
     public const string MessagingRabbitMqQueueName = "messaging.rabbitmq.queue.name";
+    public const string MessagingRabbitMqDeadLetterQueueName = "messaging.rabbitmq.dead_letter_queue.name";
     public const string MessagingRabbitMqDeliveryTag = "messaging.rabbitmq.delivery_tag";
     public const string MessagingRabbitMqRedelivered = "messaging.rabbitmq.redelivered";
 

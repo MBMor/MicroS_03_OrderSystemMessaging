@@ -19,5 +19,6 @@ public static class OrderSystemMetricNames
     public const string RabbitMqMessagesPublishedTotal = "rabbitmq.messages.published.total";
     public const string RabbitMqMessagesConsumedTotal = "rabbitmq.messages.consumed.total";
     public const string RabbitMqMessagesFailedTotal = "rabbitmq.messages.failed.total";
+    public const string RabbitMqMessagesDeadLetteredTotal = "rabbitmq.messages.dead_lettered.total";
     public const string RabbitMqConsumeDurationMilliseconds = "rabbitmq.consume.duration.ms";
 }

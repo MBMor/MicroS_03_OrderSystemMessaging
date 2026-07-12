@@ -232,14 +232,27 @@ public sealed class StockReservedNotificationConsumerBackgroundService(
                 _logger,
                 fallbackCorrelationId);
 
+            const string message =
+                "StockReserved notification message failed and will be dead-lettered. " +
+                "DeliveryTag: {DeliveryTag}, " +
+                "MessageId: {MessageId}, " +
+                "EventType: {EventType}, " +
+                "RoutingKey: {RoutingKey}, " +
+                "QueueName: {QueueName}, " +
+                "DeadLetterQueueName: {DeadLetterQueueName}, " +
+                "Redelivered: {Redelivered}, " +
+                "CorrelationId: {CorrelationId}, " +
+                "ErrorType: {ErrorType}";
+
             _logger.LogError(
                 exception,
-                "StockReserved notification message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}, ErrorType: {ErrorType}",
+                message,
                 eventArgs.DeliveryTag,
                 eventArgs.BasicProperties.MessageId,
                 eventArgs.BasicProperties.Type,
                 eventArgs.RoutingKey,
                 _topologyOptions.StockReservedQueueName,
+                _topologyOptions.StockReservedDeadLetterQueueName,
                 eventArgs.Redelivered,
                 fallbackCorrelationId,
                 ExceptionLogHelper.GetErrorType(exception));
@@ -256,6 +269,17 @@ public sealed class StockReservedNotificationConsumerBackgroundService(
                 eventArgs.RoutingKey,
                 eventArgs.BasicProperties.Type,
                 OrderSystemMetricTagValues.Failure);
+
+            consumeActivity.SetTagIfNotNull(
+                OrderSystemActivityTagNames.MessagingRabbitMqDeadLetterQueueName,
+                _topologyOptions.StockReservedDeadLetterQueueName);
+
+            OrderSystemMessagingMetrics.RecordDeadLettered(
+                _topologyOptions.StockReservedQueueName,
+                _topologyOptions.StockReservedDeadLetterQueueName,
+                eventArgs.RoutingKey,
+                eventArgs.BasicProperties.Type,
+                exception);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,
