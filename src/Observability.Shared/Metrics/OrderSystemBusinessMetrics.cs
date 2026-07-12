@@ -43,20 +43,26 @@ public static class OrderSystemBusinessMetrics
 
     public static void RecordOrderCreated(string? orderStatus)
     {
-        var tags = new TagList();
-        tags.Add(
-            OrderSystemMetricTagNames.OrderStatus,
-            OrderSystemMetricTagHelper.Normalize(orderStatus));
+        var tags = new TagList
+        {
+            {
+                OrderSystemMetricTagNames.OrderStatus,
+                OrderSystemMetricTagHelper.Normalize(orderStatus)
+            }
+        };
 
         OrdersCreatedTotal.Add(1, tags);
     }
 
     public static void RecordOrderStockReserved(string? orderStatus)
     {
-        var tags = new TagList();
-        tags.Add(
-            OrderSystemMetricTagNames.OrderStatus,
-            OrderSystemMetricTagHelper.Normalize(orderStatus));
+        var tags = new TagList
+        {
+            {
+                OrderSystemMetricTagNames.OrderStatus,
+                OrderSystemMetricTagHelper.Normalize(orderStatus)
+            }
+        };
 
         OrdersStockReservedTotal.Add(1, tags);
     }
@@ -65,46 +71,60 @@ public static class OrderSystemBusinessMetrics
         string? orderStatus,
         string? failureReason)
     {
-        var tags = new TagList();
-        tags.Add(
-            OrderSystemMetricTagNames.OrderStatus,
-            OrderSystemMetricTagHelper.Normalize(orderStatus));
-        tags.Add(
-            OrderSystemMetricTagNames.ReservationFailureReason,
-            OrderSystemMetricTagHelper.Normalize(failureReason));
+        var tags = new TagList
+        {
+            {
+                OrderSystemMetricTagNames.OrderStatus,
+                OrderSystemMetricTagHelper.Normalize(orderStatus)
+            },
+            {
+                OrderSystemMetricTagNames.ReservationFailureReason,
+                OrderSystemMetricTagHelper.Normalize(failureReason)
+            }
+        };
 
         OrdersStockReservationFailedTotal.Add(1, tags);
     }
 
     public static void RecordInventoryStockReserved()
     {
-        var tags = new TagList();
-        tags.Add(
-            OrderSystemMetricTagNames.ReservationStatus,
-            OrderSystemMetricTagValues.Reserved);
+        var tags = new TagList
+        {
+            {
+                OrderSystemMetricTagNames.ReservationStatus,
+                OrderSystemMetricTagValues.Reserved
+            }
+        };
 
         InventoryStockReservationsTotal.Add(1, tags);
     }
 
     public static void RecordInventoryStockReservationFailed(string? failureReason)
     {
-        var tags = new TagList();
-        tags.Add(
-            OrderSystemMetricTagNames.ReservationStatus,
-            OrderSystemMetricTagValues.Failed);
-        tags.Add(
-            OrderSystemMetricTagNames.ReservationFailureReason,
-            OrderSystemMetricTagHelper.Normalize(failureReason));
+        var tags = new TagList
+        {
+            {
+                OrderSystemMetricTagNames.ReservationStatus,
+                OrderSystemMetricTagValues.Failed
+            },
+            {
+                OrderSystemMetricTagNames.ReservationFailureReason,
+                OrderSystemMetricTagHelper.Normalize(failureReason)
+            }
+        };
 
         InventoryStockReservationFailuresTotal.Add(1, tags);
     }
 
     public static void RecordNotificationCreated(string? notificationType)
     {
-        var tags = new TagList();
-        tags.Add(
-            OrderSystemMetricTagNames.NotificationType,
-            OrderSystemMetricTagHelper.Normalize(notificationType));
+        var tags = new TagList
+        {
+            {
+                OrderSystemMetricTagNames.NotificationType,
+                OrderSystemMetricTagHelper.Normalize(notificationType)
+            }
+        };
 
         NotificationsCreatedTotal.Add(1, tags);
     }

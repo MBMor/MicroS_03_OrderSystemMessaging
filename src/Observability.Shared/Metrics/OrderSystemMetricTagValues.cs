@@ -2,6 +2,8 @@
 
 public static class OrderSystemMetricTagValues
 {
+    public const string Unknown = "unknown";
+
     public const string Success = "success";
     public const string Failure = "failure";
 

@@ -2,12 +2,10 @@
 
 internal static class OrderSystemMetricTagHelper
 {
-    public const string Unknown = "unknown";
-
     public static string Normalize(string? value)
     {
         return string.IsNullOrWhiteSpace(value)
-            ? Unknown
+            ? OrderSystemMetricTagValues.Unknown
             : value.Trim();
     }
 

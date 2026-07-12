@@ -99,29 +99,29 @@ public static class OrderSystemMessagingMetrics
         string? routingKey,
         string? eventType)
     {
-        var tags = new TagList();
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingSystem,
-            OrderSystemMetricTagValues.RabbitMq);
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingOperation,
-            OrderSystemMetricTagValues.Publish);
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingDestinationName,
-            OrderSystemMetricTagHelper.Normalize(exchangeName));
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingRabbitMqRoutingKey,
-            OrderSystemMetricTagHelper.Normalize(routingKey));
-
-        tags.Add(
-            OrderSystemMetricTagNames.EventType,
-            OrderSystemMetricTagHelper.Normalize(eventType));
-
-        return tags;
+        return new TagList
+        {
+            {
+                OrderSystemMetricTagNames.MessagingSystem,
+                OrderSystemMetricTagValues.RabbitMq
+            },
+            {
+                OrderSystemMetricTagNames.MessagingOperation,
+                OrderSystemMetricTagValues.Publish
+            },
+            {
+                OrderSystemMetricTagNames.MessagingDestinationName,
+                OrderSystemMetricTagHelper.Normalize(exchangeName)
+            },
+            {
+                OrderSystemMetricTagNames.MessagingRabbitMqRoutingKey,
+                OrderSystemMetricTagHelper.Normalize(routingKey)
+            },
+            {
+                OrderSystemMetricTagNames.EventType,
+                OrderSystemMetricTagHelper.Normalize(eventType)
+            }
+        };
     }
 
     private static TagList CreateConsumeTags(
@@ -129,28 +129,28 @@ public static class OrderSystemMessagingMetrics
         string? routingKey,
         string? eventType)
     {
-        var tags = new TagList();
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingSystem,
-            OrderSystemMetricTagValues.RabbitMq);
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingOperation,
-            OrderSystemMetricTagValues.Consume);
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingRabbitMqQueueName,
-            OrderSystemMetricTagHelper.Normalize(queueName));
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingRabbitMqRoutingKey,
-            OrderSystemMetricTagHelper.Normalize(routingKey));
-
-        tags.Add(
-            OrderSystemMetricTagNames.EventType,
-            OrderSystemMetricTagHelper.Normalize(eventType));
-
-        return tags;
+        return new TagList
+        {
+            {
+                OrderSystemMetricTagNames.MessagingSystem,
+                OrderSystemMetricTagValues.RabbitMq
+            },
+            {
+                OrderSystemMetricTagNames.MessagingOperation,
+                OrderSystemMetricTagValues.Consume
+            },
+            {
+                OrderSystemMetricTagNames.MessagingRabbitMqQueueName,
+                OrderSystemMetricTagHelper.Normalize(queueName)
+            },
+            {
+                OrderSystemMetricTagNames.MessagingRabbitMqRoutingKey,
+                OrderSystemMetricTagHelper.Normalize(routingKey)
+            },
+            {
+                OrderSystemMetricTagNames.EventType,
+                OrderSystemMetricTagHelper.Normalize(eventType)
+            }
+        };
     }
 }

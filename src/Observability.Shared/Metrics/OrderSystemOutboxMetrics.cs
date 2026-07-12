@@ -104,20 +104,20 @@ public static class OrderSystemOutboxMetrics
         string? routingKey,
         string? outboxStatus)
     {
-        var tags = new TagList();
-
-        tags.Add(
-            OrderSystemMetricTagNames.EventType,
-            OrderSystemMetricTagHelper.Normalize(eventType));
-
-        tags.Add(
-            OrderSystemMetricTagNames.MessagingRabbitMqRoutingKey,
-            OrderSystemMetricTagHelper.Normalize(routingKey));
-
-        tags.Add(
-            OrderSystemMetricTagNames.OutboxStatus,
-            OrderSystemMetricTagHelper.Normalize(outboxStatus));
-
-        return tags;
+        return new TagList
+        {
+            {
+                OrderSystemMetricTagNames.EventType,
+                OrderSystemMetricTagHelper.Normalize(eventType)
+            },
+            {
+                OrderSystemMetricTagNames.MessagingRabbitMqRoutingKey,
+                OrderSystemMetricTagHelper.Normalize(routingKey)
+            },
+            {
+                OrderSystemMetricTagNames.OutboxStatus,
+                OrderSystemMetricTagHelper.Normalize(outboxStatus)
+            }
+        };
     }
 }
