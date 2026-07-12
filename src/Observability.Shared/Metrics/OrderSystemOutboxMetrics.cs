@@ -23,6 +23,12 @@ public static class OrderSystemOutboxMetrics
             unit: "{message}",
             description: "Number of outbox messages scheduled for retry.");
 
+    private static readonly Histogram<double> OutboxPublishDurationMilliseconds =
+        OrderSystemMeters.Outbox.CreateHistogram<double>(
+            name: OrderSystemMetricNames.OutboxPublishDurationMilliseconds,
+            unit: "ms",
+            description: "Duration of publishing one outbox message.");
+
     public static void RecordPublished(
         string? eventType,
         string? routingKey,
@@ -70,6 +76,27 @@ public static class OrderSystemOutboxMetrics
             OrderSystemMetricTagHelper.Normalize(exception));
 
         OutboxMessagesRetriedTotal.Add(1, tags);
+    }
+
+    public static void RecordPublishDuration(
+        TimeSpan duration,
+        string? eventType,
+        string? routingKey,
+        string? outboxStatus,
+        string outcome)
+    {
+        var tags = CreateOutboxTags(
+            eventType,
+            routingKey,
+            outboxStatus);
+
+        tags.Add(
+            OrderSystemMetricTagNames.Outcome,
+            OrderSystemMetricTagHelper.Normalize(outcome));
+
+        OutboxPublishDurationMilliseconds.Record(
+            duration.TotalMilliseconds,
+            tags);
     }
 
     private static TagList CreateOutboxTags(

@@ -2,6 +2,9 @@
 
 public static class OrderSystemMetricTagValues
 {
+    public const string Success = "success";
+    public const string Failure = "failure";
+
     public const string RabbitMq = "rabbitmq";
 
     public const string Publish = "publish";

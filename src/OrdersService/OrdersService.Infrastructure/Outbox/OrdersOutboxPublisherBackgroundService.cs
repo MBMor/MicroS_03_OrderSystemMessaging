@@ -148,6 +148,8 @@ public sealed class OrdersOutboxPublisherBackgroundService(
         OutboxMessage outboxMessage,
         CancellationToken cancellationToken)
     {
+        var startedAt = Stopwatch.GetTimestamp();
+
         var correlationId = RabbitMqMessageHeaders.GetCorrelationIdFromJsonPayload(
             outboxMessage.Payload);
 
@@ -215,6 +217,13 @@ public sealed class OrdersOutboxPublisherBackgroundService(
                 outboxMessage.RoutingKey,
                 outboxMessage.Status.ToString());
 
+            OrderSystemOutboxMetrics.RecordPublishDuration(
+                Stopwatch.GetElapsedTime(startedAt),
+                outboxMessage.EventType,
+                outboxMessage.RoutingKey,
+                outboxMessage.Status.ToString(),
+                OrderSystemMetricTagValues.Success);
+
             activity.SetTagIfNotNull(
                 OrderSystemActivityTagNames.OutboxMessageStatus,
                 outboxMessage.Status.ToString());
@@ -256,6 +265,13 @@ public sealed class OrdersOutboxPublisherBackgroundService(
                     outboxMessage.Status.ToString(),
                     exception);
             }
+
+            OrderSystemOutboxMetrics.RecordPublishDuration(
+                    Stopwatch.GetElapsedTime(startedAt),
+                    outboxMessage.EventType,
+                    outboxMessage.RoutingKey,
+                    outboxMessage.Status.ToString(),
+                    OrderSystemMetricTagValues.Failure);
 
             activity.SetTagIfNotNull(
                 OrderSystemActivityTagNames.OutboxMessageStatus,

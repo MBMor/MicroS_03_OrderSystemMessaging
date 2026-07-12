@@ -113,6 +113,8 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
         BasicDeliverEventArgs eventArgs,
         CancellationToken cancellationToken)
     {
+        var startedAt = Stopwatch.GetTimestamp();
+
         var fallbackCorrelationId = RabbitMqMessageHeaders.GetCorrelationIdOrCreate(
             eventArgs.BasicProperties.Headers);
 
@@ -189,6 +191,13 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
                 eventArgs.RoutingKey,
                 command.EventType);
 
+            OrderSystemMessagingMetrics.RecordConsumeDuration(
+                Stopwatch.GetElapsedTime(startedAt),
+                _topologyOptions.StockReservationFailedQueueName,
+                eventArgs.RoutingKey,
+                command.EventType,
+                OrderSystemMetricTagValues.Success);
+
             consumeActivity?.SetStatus(ActivityStatusCode.Ok);
 
             _logger.LogInformation(
@@ -231,6 +240,19 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
                 _topologyOptions.StockReservationFailedQueueName,
                 eventArgs.Redelivered,
                 fallbackCorrelationId);
+
+            OrderSystemMessagingMetrics.RecordFailed(
+                _topologyOptions.StockReservationFailedQueueName,
+                eventArgs.RoutingKey,
+                eventArgs.BasicProperties.Type,
+                exception);
+
+            OrderSystemMessagingMetrics.RecordConsumeDuration(
+                Stopwatch.GetElapsedTime(startedAt),
+                _topologyOptions.StockReservationFailedQueueName,
+                eventArgs.RoutingKey,
+                eventArgs.BasicProperties.Type,
+                OrderSystemMetricTagValues.Failure);
 
             await channel.BasicNackAsync(
                 deliveryTag: eventArgs.DeliveryTag,

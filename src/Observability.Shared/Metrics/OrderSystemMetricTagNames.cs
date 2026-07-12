@@ -4,6 +4,8 @@ public static class OrderSystemMetricTagNames
 {
     public const string ServiceName = "service.name";
 
+    public const string Outcome = "outcome";
+
     public const string OrderStatus = "order.status";
 
     public const string ReservationStatus = "stock.reservation.status";
