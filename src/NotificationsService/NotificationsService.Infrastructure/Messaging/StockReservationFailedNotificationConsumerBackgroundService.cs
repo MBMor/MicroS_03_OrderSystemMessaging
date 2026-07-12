@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using NotificationsService.Application.EventNotifications.Abstractions;
 using NotificationsService.Application.EventNotifications.Contracts;
 using Observability.Shared.Correlation;
+using Observability.Shared.Logging;
 using Observability.Shared.Messaging;
 using Observability.Shared.Tracing;
 using OpenTelemetry;
@@ -59,8 +60,9 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
             {
                 _logger.LogWarning(
                     exception,
-                    "Notifications StockReservationFailed consumer failed. Retrying in {RetryDelaySeconds} second(s).",
-                    _consumerOptions.ConnectionRetryDelaySeconds);
+                    "Notifications StockReservationFailed consumer failed. Retrying in {RetryDelaySeconds} second(s). ErrorType: {ErrorType}",
+                    _consumerOptions.ConnectionRetryDelaySeconds,
+                    ExceptionLogHelper.GetErrorType(exception));
 
                 await Task.Delay(
                     TimeSpan.FromSeconds(_consumerOptions.ConnectionRetryDelaySeconds),
@@ -232,14 +234,15 @@ public sealed class StockReservationFailedNotificationConsumerBackgroundService(
 
             _logger.LogError(
                 exception,
-                "StockReservationFailed notification message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}",
+                "StockReservationFailed notification message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}, ErrorType: {ErrorType}",
                 eventArgs.DeliveryTag,
                 eventArgs.BasicProperties.MessageId,
                 eventArgs.BasicProperties.Type,
                 eventArgs.RoutingKey,
                 _topologyOptions.StockReservationFailedQueueName,
                 eventArgs.Redelivered,
-                fallbackCorrelationId);
+                fallbackCorrelationId,
+                ExceptionLogHelper.GetErrorType(exception));
 
             OrderSystemMessagingMetrics.RecordFailed(
                 _topologyOptions.StockReservationFailedQueueName,

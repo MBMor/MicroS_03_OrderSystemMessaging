@@ -8,10 +8,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Observability.Shared.Logging;
 using Observability.Shared.Messaging;
+using Observability.Shared.Metrics;
 using Observability.Shared.Tracing;
 using RabbitMQ.Client;
-using Observability.Shared.Metrics;
 
 namespace InventoryService.Infrastructure.Outbox;
 
@@ -53,7 +54,8 @@ public sealed class InventoryOutboxPublisherBackgroundService(
             {
                 _logger.LogError(
                     exception,
-                    "Inventory outbox publisher iteration failed.");
+                    "Inventory outbox publisher iteration failed. ErrorType: {ErrorType}",
+                    ExceptionLogHelper.GetErrorType(exception));
             }
 
             try
@@ -267,11 +269,11 @@ public sealed class InventoryOutboxPublisherBackgroundService(
             }
 
             OrderSystemOutboxMetrics.RecordPublishDuration(
-                    Stopwatch.GetElapsedTime(startedAt),
-                    outboxMessage.EventType,
-                    outboxMessage.RoutingKey,
-                    outboxMessage.Status.ToString(),
-                    OrderSystemMetricTagValues.Failure);
+                Stopwatch.GetElapsedTime(startedAt),
+                outboxMessage.EventType,
+                outboxMessage.RoutingKey,
+                outboxMessage.Status.ToString(),
+                OrderSystemMetricTagValues.Failure);
 
             activity.SetTagIfNotNull(
                 OrderSystemActivityTagNames.OutboxMessageStatus,
@@ -286,7 +288,7 @@ public sealed class InventoryOutboxPublisherBackgroundService(
             _logger.Log(
                 logLevel,
                 exception,
-                "Publishing Inventory outbox message {OutboxMessageId} failed. EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, MaxRetryCount: {MaxRetryCount}, Status: {Status}, CorrelationId: {CorrelationId}",
+                "Publishing Inventory outbox message failed. OutboxMessageId: {OutboxMessageId}, EventId: {EventId}, EventType: {EventType}, RoutingKey: {RoutingKey}, RetryCount: {RetryCount}, MaxRetryCount: {MaxRetryCount}, OutboxStatus: {OutboxStatus}, CorrelationId: {CorrelationId}, ErrorType: {ErrorType}",
                 outboxMessage.Id,
                 outboxMessage.EventId,
                 outboxMessage.EventType,
@@ -294,7 +296,8 @@ public sealed class InventoryOutboxPublisherBackgroundService(
                 outboxMessage.RetryCount,
                 _outboxPublisherOptions.MaxRetryCount,
                 outboxMessage.Status,
-                correlationId);
+                correlationId,
+                ExceptionLogHelper.GetErrorType(exception));
         }
     }
 
@@ -383,6 +386,17 @@ public sealed class InventoryOutboxPublisherBackgroundService(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             activity.SetError(exception);
+
+            _logger.LogError(
+                exception,
+                "RabbitMQ publish failed. ExchangeName: {ExchangeName}, RoutingKey: {RoutingKey}, EventId: {EventId}, EventType: {EventType}, CorrelationId: {CorrelationId}, ErrorType: {ErrorType}",
+                _rabbitMqOptions.ExchangeName,
+                outboxMessage.RoutingKey,
+                outboxMessage.EventId,
+                outboxMessage.EventType,
+                correlationId,
+                ExceptionLogHelper.GetErrorType(exception));
+
             throw;
         }
     }

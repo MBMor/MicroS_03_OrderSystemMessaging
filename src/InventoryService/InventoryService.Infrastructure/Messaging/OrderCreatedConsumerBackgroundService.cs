@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Observability.Shared.Correlation;
+using Observability.Shared.Logging;
 using Observability.Shared.Messaging;
 using Observability.Shared.Tracing;
 using OpenTelemetry;
@@ -59,8 +60,9 @@ public sealed class OrderCreatedConsumerBackgroundService(
             {
                 _logger.LogWarning(
                     exception,
-                    "Inventory OrderCreated consumer failed. Retrying in {RetryDelaySeconds} second(s).",
-                    _consumerOptions.ConnectionRetryDelaySeconds);
+                    "Inventory OrderCreated consumer failed. Retrying in {RetryDelaySeconds} second(s). ErrorType: {ErrorType}",
+                    _consumerOptions.ConnectionRetryDelaySeconds,
+                    ExceptionLogHelper.GetErrorType(exception));
 
                 await Task.Delay(
                     TimeSpan.FromSeconds(_consumerOptions.ConnectionRetryDelaySeconds),
@@ -233,14 +235,15 @@ public sealed class OrderCreatedConsumerBackgroundService(
 
             _logger.LogError(
                 exception,
-                "OrderCreated message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}",
+                "OrderCreated message failed and will be dead-lettered. DeliveryTag: {DeliveryTag}, MessageId: {MessageId}, EventType: {EventType}, RoutingKey: {RoutingKey}, QueueName: {QueueName}, Redelivered: {Redelivered}, CorrelationId: {CorrelationId}, ErrorType: {ErrorType}",
                 eventArgs.DeliveryTag,
                 eventArgs.BasicProperties.MessageId,
                 eventArgs.BasicProperties.Type,
                 eventArgs.RoutingKey,
                 _topologyOptions.OrderCreatedQueueName,
                 eventArgs.Redelivered,
-                fallbackCorrelationId);
+                fallbackCorrelationId,
+                ExceptionLogHelper.GetErrorType(exception));
 
             OrderSystemMessagingMetrics.RecordFailed(
                 _topologyOptions.OrderCreatedQueueName,
