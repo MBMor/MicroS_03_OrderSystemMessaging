@@ -1401,6 +1401,10 @@ Keycloak local setup:
 
     infra/keycloak/README.md
 
+Observability troubleshooting:
+
+    docs/observability/troubleshooting.md
+
 ## Troubleshooting
 
 ### API Gateway is unhealthy
