@@ -12,7 +12,11 @@ public static class RabbitMqTraceContextHeaders
     public const string TraceStateHeaderName = "tracestate";
 
     private static readonly TextMapPropagator Propagator =
-        Propagators.DefaultTextMapPropagator;
+        new CompositeTextMapPropagator(
+            [
+                new TraceContextPropagator(),
+                new BaggagePropagator()
+            ]);
 
     public static TraceContextSnapshot CaptureCurrent()
     {
@@ -154,21 +158,15 @@ public static class RabbitMqTraceContextHeaders
         return value switch
         {
             null => null,
-
             string stringValue => stringValue,
-
             byte[] bytes => Encoding.UTF8.GetString(bytes),
-
             ReadOnlyMemory<byte> readOnlyMemory => Encoding.UTF8.GetString(readOnlyMemory.Span),
-
             Memory<byte> memory => Encoding.UTF8.GetString(memory.Span),
-
             ArraySegment<byte> segment when segment.Array is not null =>
                 Encoding.UTF8.GetString(
                     segment.Array,
                     segment.Offset,
                     segment.Count),
-
             _ => value.ToString()
         };
     }
